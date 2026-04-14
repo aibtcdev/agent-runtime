@@ -1,0 +1,120 @@
+{
+  "workflows": [
+    {
+      "template": "community-research",
+      "instance_key": "lumen-community-wiki",
+      "context": {
+        "slug": "lumen-community-wiki",
+        "topic": "AIBTC community wiki",
+        "output_path": "community-wiki/aibtc-basics.md"
+      }
+    },
+    {
+      "template": "community-research",
+      "instance_key": "lumen-community-glossary",
+      "context": {
+        "slug": "lumen-community-glossary",
+        "topic": "AIBTC glossary",
+        "output_path": "community-wiki/glossary.md",
+        "current_focus": "glossary"
+      }
+    },
+    {
+      "template": "community-research",
+      "instance_key": "lumen-community-faq",
+      "context": {
+        "slug": "lumen-community-faq",
+        "topic": "AIBTC community FAQ",
+        "output_path": "community-wiki/faq.md",
+        "current_focus": "faq"
+      }
+    },
+    {
+      "template": "community-research",
+      "instance_key": "lumen-platform-messaging",
+      "context": {
+        "slug": "lumen-platform-messaging",
+        "topic": "AIBTC messaging and identity",
+        "output_path": "community-wiki/messaging-and-identity.md",
+        "current_focus": "messaging-and-identity"
+      }
+    },
+    {
+      "template": "community-research",
+      "instance_key": "lumen-news-explainer",
+      "context": {
+        "slug": "lumen-news-explainer",
+        "topic": "AIBTC News explainer",
+        "output_path": "community-wiki/aibtc-news-explainer.md",
+        "current_focus": "news-explainer"
+      }
+    },
+    {
+      "template": "wallet-onboarding",
+      "instance_key": "lumen-wallet-onboarding",
+      "context": {
+        "slug": "lumen-wallet-onboarding",
+        "agent_name": "Lumen",
+        "checklist_path": "community-wiki/lumen-wallet-checklist.md"
+      }
+    }
+  ],
+  "tasks": [
+    {
+      "kind": "community-wiki-outline",
+      "source": "operator:lumen-backlog:outline",
+      "subject": "Draft AIBTC community wiki outline",
+      "description": "Create a clear wiki outline covering platform basics, news, wallet onboarding, glossary, and FAQ.",
+      "priority": 5,
+      "requested_profile": "lumen",
+      "payload": {
+        "topic": "AIBTC community wiki outline",
+        "focus": "outline",
+        "output_path": "community-wiki/outline.md",
+        "operator_goal": "Produce a structured outline that can anchor future pages."
+      }
+    },
+    {
+      "kind": "community-research",
+      "source": "operator:lumen-backlog:beats",
+      "subject": "Research AIBTC News beats and streak mechanics",
+      "description": "Explain beat claiming, streak maintenance, and the signal-filing cadence in practical terms for future contributors.",
+      "priority": 5,
+      "requested_profile": "lumen",
+      "payload": {
+        "topic": "AIBTC News beats and streaks",
+        "focus": "beats-and-streaks",
+        "output_path": "community-wiki/news-beats-and-streaks.md",
+        "operator_goal": "Produce a concise explainer that helps new contributors understand how to participate."
+      }
+    },
+    {
+      "kind": "community-research",
+      "source": "operator:lumen-backlog:wallet-open-questions",
+      "subject": "Identify open questions in Lumen wallet onboarding",
+      "description": "Summarize unresolved questions, risks, and missing evidence for putting Lumen on AIBTC with a wallet.",
+      "priority": 5,
+      "requested_profile": "lumen",
+      "payload": {
+        "topic": "Lumen wallet onboarding open questions",
+        "focus": "wallet-open-questions",
+        "output_path": "community-wiki/lumen-wallet-open-questions.md",
+        "operator_goal": "Produce a blocker list for the eventual wallet setup session."
+      }
+    },
+    {
+      "kind": "community-wiki-review",
+      "source": "operator:lumen-backlog:review",
+      "subject": "Review current wiki and wallet research outputs",
+      "description": "Summarize what is already covered, what remains unclear, and what should be prioritized next.",
+      "priority": 4,
+      "requested_profile": "lumen",
+      "payload": {
+        "topic": "AIBTC research review",
+        "focus": "review",
+        "output_path": "community-wiki/review.md",
+        "operator_goal": "Create a checkpoint summary for the next human review."
+      }
+    }
+  ]
+}

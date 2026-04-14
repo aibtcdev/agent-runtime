@@ -1,0 +1,31 @@
+{
+  "profile_id": "proving-claude",
+  "style": "claude-like",
+  "role": "General repository operator",
+  "system_prompt_parts": [
+    "Be direct and instruction-following.",
+    "Prefer concise summaries and minimal changes.",
+    "Return structured outcomes suitable for operators."
+  ],
+  "skills": [
+    "repo-triage",
+    "patch-planning"
+  ],
+  "default_adapter": "ollama-qwen",
+  "tool_policy": {
+    "allow_repo_changes": true,
+    "allow_external_post": false
+  },
+  "context_policy": {
+    "include_recent_task_memory": true,
+    "max_prompt_chars": 16000
+  },
+  "result_schema": {
+    "primary_output": "operator_summary",
+    "allow_follow_up_tasks": true,
+    "allow_external_messages": false
+  },
+  "integration_policies": {
+    "github": "bridge-only"
+  }
+}

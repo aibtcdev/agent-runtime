@@ -1,0 +1,148 @@
+{
+  "tasks": [
+    {
+      "kind": "community-wiki-review",
+      "source": "operator:lumen-next:grounding-audit",
+      "subject": "Audit current Lumen wiki artifacts for grounding and unsupported claims",
+      "description": "Review the existing community wiki artifacts and mark each section as grounded, weakly grounded, or unsupported based only on the seeded docs and generated artifacts. Produce a concise operator report with specific rewrite priorities.",
+      "priority": 6,
+      "requested_profile": "lumen",
+      "payload": {
+        "topic": "Lumen artifact grounding audit",
+        "focus": "grounding-audit",
+        "output_path": "community-wiki/grounding-audit.md",
+        "sources": [
+          "docs/aibtc-platform.md",
+          "docs/aibtc-news.md"
+        ],
+        "existing_artifacts": [
+          "community-wiki/faq.md",
+          "community-wiki/glossary.md",
+          "community-wiki/messaging-and-identity.md",
+          "community-wiki/aibtc-news-explainer.md",
+          "community-wiki/lumen-wallet-onboarding.md",
+          "community-wiki/lumen-wallet-checklist.md",
+          "community-wiki/lumen-wallet-setup-guide.md",
+          "community-wiki/review.md"
+        ],
+        "operator_goal": "Create a trust map for the current outputs and identify the highest-value rewrites."
+      }
+    },
+    {
+      "kind": "community-research",
+      "source": "operator:lumen-next:faq-rewrite",
+      "subject": "Rewrite the AIBTC community FAQ from source docs only",
+      "description": "Rewrite the FAQ as a grounded operator-safe explainer based strictly on the seeded AIBTC platform and news docs. Remove unsupported claims and keep the tone concise and practical.",
+      "priority": 6,
+      "requested_profile": "lumen",
+      "payload": {
+        "topic": "AIBTC community FAQ rewrite",
+        "focus": "faq-rewrite",
+        "output_path": "community-wiki/faq-v2.md",
+        "sources": [
+          "docs/aibtc-platform.md",
+          "docs/aibtc-news.md"
+        ],
+        "existing_artifacts": [
+          "community-wiki/faq.md"
+        ],
+        "operator_goal": "Produce a grounded FAQ that can replace the current draft."
+      }
+    },
+    {
+      "kind": "community-research",
+      "source": "operator:lumen-next:wallet-checklist-rewrite",
+      "subject": "Rewrite the Lumen wallet checklist with exact steps and explicit unknowns",
+      "description": "Produce a practical checklist for wallet setup and AIBTC registration using only the seeded docs. Include exact known steps, required signatures, and a separate unknowns section instead of inventing missing details.",
+      "priority": 6,
+      "requested_profile": "lumen",
+      "payload": {
+        "topic": "Lumen wallet checklist rewrite",
+        "focus": "wallet-checklist-rewrite",
+        "output_path": "community-wiki/lumen-wallet-checklist-v2.md",
+        "sources": [
+          "docs/aibtc-platform.md"
+        ],
+        "existing_artifacts": [
+          "community-wiki/lumen-wallet-checklist.md",
+          "community-wiki/lumen-wallet-onboarding.md",
+          "community-wiki/lumen-wallet-open-questions.md"
+        ],
+        "operator_goal": "Produce a usable checklist with grounded steps and clearly separated blockers."
+      }
+    },
+    {
+      "kind": "community-research",
+      "source": "operator:lumen-next:wallet-guide-rewrite",
+      "subject": "Rewrite the Lumen wallet setup guide as a grounded onboarding guide",
+      "description": "Rewrite the wallet setup guide so it reflects the actual registration and heartbeat flow described in the docs. Avoid generic wallet boilerplate and clearly distinguish known steps from unresolved implementation details.",
+      "priority": 5,
+      "requested_profile": "lumen",
+      "payload": {
+        "topic": "Lumen wallet setup guide rewrite",
+        "focus": "wallet-guide-rewrite",
+        "output_path": "community-wiki/lumen-wallet-setup-guide-v2.md",
+        "sources": [
+          "docs/aibtc-platform.md"
+        ],
+        "existing_artifacts": [
+          "community-wiki/lumen-wallet-setup-guide.md",
+          "community-wiki/lumen-wallet-onboarding.md",
+          "community-wiki/lumen-wallet-open-questions.md"
+        ],
+        "operator_goal": "Produce a grounded onboarding guide that is safe to refine toward publishing."
+      }
+    },
+    {
+      "kind": "community-research",
+      "source": "operator:lumen-next:gaps-report",
+      "subject": "Identify the highest-value missing pages and next steps for Lumen",
+      "description": "Based on the current artifact set and the seeded docs, identify what is still missing, what should be rewritten, and what operator-facing assets should be produced next.",
+      "priority": 5,
+      "requested_profile": "lumen",
+      "payload": {
+        "topic": "Lumen gaps and next steps",
+        "focus": "gaps-and-next-steps",
+        "output_path": "community-wiki/gaps-and-next-steps.md",
+        "sources": [
+          "docs/aibtc-platform.md",
+          "docs/aibtc-news.md"
+        ],
+        "existing_artifacts": [
+          "community-wiki/faq.md",
+          "community-wiki/glossary.md",
+          "community-wiki/messaging-and-identity.md",
+          "community-wiki/aibtc-news-explainer.md",
+          "community-wiki/lumen-wallet-onboarding.md",
+          "community-wiki/lumen-wallet-checklist.md",
+          "community-wiki/lumen-wallet-setup-guide.md",
+          "community-wiki/review.md"
+        ],
+        "operator_goal": "Generate the next backlog from actual current state, not generic research prompts."
+      }
+    },
+    {
+      "kind": "community-research",
+      "source": "operator:lumen-next:troubleshooting",
+      "subject": "Draft an operator troubleshooting guide for onboarding and participation",
+      "description": "Create a troubleshooting-oriented artifact for common failure points in wallet creation, registration, heartbeat, beat claiming, and signal filing using only the seeded docs. Separate confirmed checks from open questions.",
+      "priority": 5,
+      "requested_profile": "lumen",
+      "payload": {
+        "topic": "AIBTC troubleshooting guide",
+        "focus": "troubleshooting",
+        "output_path": "community-wiki/troubleshooting.md",
+        "sources": [
+          "docs/aibtc-platform.md",
+          "docs/aibtc-news.md"
+        ],
+        "existing_artifacts": [
+          "community-wiki/lumen-wallet-onboarding.md",
+          "community-wiki/lumen-wallet-open-questions.md",
+          "community-wiki/news-beats-and-streaks.md"
+        ],
+        "operator_goal": "Produce a practical operator troubleshooting page grounded in the current reference docs."
+      }
+    }
+  ]
+}

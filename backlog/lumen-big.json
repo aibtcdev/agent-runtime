@@ -1,0 +1,292 @@
+{
+  "tasks": [
+    {
+      "kind": "runtime-improvement",
+      "source": "operator:lumen-big:self-audit",
+      "subject": "Audit Lumen runtime behavior and propose a proposal-first operating model",
+      "description": "Inspect the current runtime, profile, artifact history, and task behavior. Produce a grounded proposal for how Lumen should observe, propose, implement, verify, and hand off work instead of making one-off changes.",
+      "priority": 7,
+      "requested_profile": "proving-codex",
+      "payload": {
+        "objective": "Turn Lumen into a proposal-first operator/builder instead of a one-shot content generator.",
+        "phase": "observe-and-propose",
+        "scope": [
+          "agent-runtime/src/",
+          "agent-runtime/profiles/",
+          "agent-runtime/deploy/lumen/",
+          "agent-runtime/backlog/",
+          "agents/lumen/"
+        ],
+        "allowed_write_paths": [
+          "state/artifacts/plans/",
+          "state/artifacts/reports/"
+        ],
+        "inputs": [
+          "profiles/lumen/profile.json",
+          "src/runtime.ts",
+          "src/workflows.ts",
+          "src/cli.ts",
+          "deploy/lumen/runtime.lumen.json",
+          "deploy/lumen/state/artifacts/community-wiki/",
+          "deploy/lumen/state/logs/runtime.jsonl"
+        ],
+        "proposal_artifact": "plans/lumen/proposal-first-runtime.md",
+        "acceptance_criteria": [
+          "Identifies concrete current runtime failure modes and drift patterns",
+          "Defines a proposal -> implementation -> verification loop for future tasks",
+          "Defines required artifacts for each phase",
+          "Defines how Lumen should reason about modifying its own code and config"
+        ],
+        "operator_goal": "Create a usable operating model for disciplined self-improvement."
+      }
+    },
+    {
+      "kind": "runtime-improvement",
+      "source": "operator:lumen-big:self-upgrade-spec",
+      "subject": "Design the Lumen builder profile and bounded self-modification rules",
+      "description": "Write a concrete spec for a builder-oriented Lumen mode that can modify code within declared scope, requires a proposal artifact first, and records verification evidence after implementation.",
+      "priority": 7,
+      "requested_profile": "proving-codex",
+      "payload": {
+        "objective": "Define how Lumen should safely modify its own runtime and related code.",
+        "phase": "propose",
+        "scope": [
+          "agent-runtime/profiles/",
+          "agent-runtime/src/",
+          "agent-runtime/deploy/lumen/"
+        ],
+        "allowed_write_paths": [
+          "state/artifacts/plans/",
+          "state/artifacts/specs/"
+        ],
+        "inputs": [
+          "state/artifacts/plans/lumen/proposal-first-runtime.md",
+          "profiles/lumen/profile.json",
+          "deploy/lumen/runtime.lumen.json"
+        ],
+        "proposal_artifact": "specs/lumen/lumen-builder-profile.md",
+        "acceptance_criteria": [
+          "Specifies allowed write scope",
+          "Specifies proposal artifact format",
+          "Specifies verification and rollback requirements",
+          "Specifies when Lumen should refuse or defer a change"
+        ],
+        "operator_goal": "Produce a precise spec for Lumen's next operating mode."
+      }
+    },
+    {
+      "kind": "runtime-improvement",
+      "source": "operator:lumen-big:self-upgrade-implementation-plan",
+      "subject": "Plan the concrete runtime and profile changes needed for proposal-first execution",
+      "description": "Based on the audit and builder-profile spec, identify the exact code/config changes required to support proposal-first work, bounded writes, and verification artifacts.",
+      "priority": 6,
+      "requested_profile": "proving-codex",
+      "payload": {
+        "objective": "Translate the proposal-first model into specific implementation work.",
+        "phase": "implementation-plan",
+        "scope": [
+          "agent-runtime/src/",
+          "agent-runtime/profiles/",
+          "agent-runtime/deploy/lumen/"
+        ],
+        "allowed_write_paths": [
+          "state/artifacts/plans/",
+          "state/artifacts/reports/"
+        ],
+        "inputs": [
+          "state/artifacts/plans/lumen/proposal-first-runtime.md",
+          "state/artifacts/specs/lumen/lumen-builder-profile.md"
+        ],
+        "proposal_artifact": "plans/lumen/proposal-first-implementation-plan.md",
+        "acceptance_criteria": [
+          "Lists exact files to change",
+          "Separates profile changes from runtime changes",
+          "Defines verification for each planned change",
+          "Orders work into safe implementation sequence"
+        ],
+        "operator_goal": "Produce an implementation-ready change plan instead of ad hoc edits."
+      }
+    },
+    {
+      "kind": "wallet-readiness",
+      "source": "operator:lumen-big:aibtc-wallet-readiness",
+      "subject": "Audit Lumen's AIBTC wallet and identity readiness",
+      "description": "Assess the current state of Lumen wallet setup, registration, signature requirements, and identity readiness. Distinguish proven capabilities, missing tooling, and unresolved prerequisites.",
+      "priority": 7,
+      "requested_profile": "proving-codex",
+      "payload": {
+        "objective": "Establish what is actually required to get Lumen on AIBTC safely.",
+        "phase": "observe-and-propose",
+        "scope": [
+          "AIBTC wallet tooling",
+          "registration flow",
+          "heartbeat flow",
+          "identity verification"
+        ],
+        "allowed_write_paths": [
+          "state/artifacts/reports/",
+          "state/artifacts/plans/"
+        ],
+        "inputs": [
+          "docs/aibtc-platform.md",
+          "deploy/lumen/state/artifacts/community-wiki/lumen-wallet-onboarding.md",
+          "deploy/lumen/state/artifacts/community-wiki/lumen-wallet-checklist.md",
+          "deploy/lumen/state/artifacts/community-wiki/lumen-wallet-open-questions.md",
+          "deploy/lumen/state/artifacts/community-wiki/lumen-wallet-setup-guide.md"
+        ],
+        "proposal_artifact": "reports/lumen/aibtc-wallet-readiness.md",
+        "acceptance_criteria": [
+          "Separates proven facts from unknowns",
+          "Identifies exact missing commands, tools, or secrets",
+          "Produces a staged path to registration and heartbeat proof",
+          "Does not invent wallet behavior not grounded in inputs"
+        ],
+        "operator_goal": "Create the operator-grade wallet readiness report for Lumen."
+      }
+    },
+    {
+      "kind": "wallet-readiness",
+      "source": "operator:lumen-big:aibtc-wallet-integration-spec",
+      "subject": "Design the integration plan for Lumen wallet, registration, and heartbeat support",
+      "description": "Write a concrete spec for integrating wallet, registration, verification, and heartbeat capabilities into Lumen's operating environment. Include exact interfaces, dependencies, and verification steps.",
+      "priority": 6,
+      "requested_profile": "proving-codex",
+      "payload": {
+        "objective": "Move from readiness analysis to an implementation spec for AIBTC participation.",
+        "phase": "propose",
+        "scope": [
+          "wallet tooling",
+          "registration",
+          "heartbeat",
+          "identity verification",
+          "operator runbooks"
+        ],
+        "allowed_write_paths": [
+          "state/artifacts/specs/",
+          "state/artifacts/plans/"
+        ],
+        "inputs": [
+          "docs/aibtc-platform.md",
+          "state/artifacts/reports/lumen/aibtc-wallet-readiness.md"
+        ],
+        "proposal_artifact": "specs/lumen/aibtc-wallet-integration.md",
+        "acceptance_criteria": [
+          "Defines exact proving steps for wallet creation, unlock, registration, verify, and heartbeat",
+          "Lists environment dependencies and secret requirements",
+          "Defines failure cases and rollback/safety controls",
+          "Identifies code/config areas that would need changes"
+        ],
+        "operator_goal": "Produce an implementation-grade spec for getting Lumen onto AIBTC."
+      }
+    },
+    {
+      "kind": "messaging-readiness",
+      "source": "operator:lumen-big:aibtc-messaging-readiness",
+      "subject": "Assess Lumen's AIBTC messaging and inbox readiness",
+      "description": "Audit how Lumen would read inbox, reply, and mark messages read using AIBTC tooling and signatures. Produce a readiness report with exact message formats, prerequisites, and blockers.",
+      "priority": 6,
+      "requested_profile": "proving-codex",
+      "payload": {
+        "objective": "Establish what is required before Lumen can safely use AIBTC messaging flows.",
+        "phase": "observe-and-propose",
+        "scope": [
+          "inbox reads",
+          "signed replies",
+          "mark-read flow",
+          "wallet/signature dependencies"
+        ],
+        "allowed_write_paths": [
+          "state/artifacts/reports/",
+          "state/artifacts/specs/"
+        ],
+        "inputs": [
+          "docs/aibtc-platform.md",
+          "state/artifacts/reports/lumen/aibtc-wallet-readiness.md"
+        ],
+        "proposal_artifact": "reports/lumen/aibtc-messaging-readiness.md",
+        "acceptance_criteria": [
+          "Explains exact message signature formats required",
+          "Identifies missing tooling or missing proofs",
+          "Separates read-only capabilities from write capabilities",
+          "Includes safe next proving steps"
+        ],
+        "operator_goal": "Create a practical messaging readiness report for Lumen."
+      }
+    },
+    {
+      "kind": "news-readiness",
+      "source": "operator:lumen-big:aibtc-news-readiness",
+      "subject": "Assess Lumen's AIBTC News participation readiness",
+      "description": "Audit beat discovery, beat claim prerequisites, signal filing requirements, and rate limits. Produce a readiness report and a safe proving plan for future participation.",
+      "priority": 6,
+      "requested_profile": "proving-codex",
+      "payload": {
+        "objective": "Establish how Lumen could participate in AIBTC News without guesswork.",
+        "phase": "observe-and-propose",
+        "scope": [
+          "beat discovery",
+          "beat claim strategy",
+          "signal filing requirements",
+          "rate limits",
+          "signature constraints"
+        ],
+        "allowed_write_paths": [
+          "state/artifacts/reports/",
+          "state/artifacts/specs/"
+        ],
+        "inputs": [
+          "docs/aibtc-news.md",
+          "deploy/lumen/state/artifacts/community-wiki/news-beats-and-streaks.md",
+          "state/artifacts/reports/lumen/aibtc-wallet-readiness.md"
+        ],
+        "proposal_artifact": "reports/lumen/aibtc-news-readiness.md",
+        "acceptance_criteria": [
+          "Explains exact known write constraints and rate limits",
+          "Identifies beat selection considerations",
+          "Distinguishes what can be proven now from what depends on wallet readiness",
+          "Produces a staged proving plan"
+        ],
+        "operator_goal": "Create the operator-grade News readiness report for Lumen."
+      }
+    },
+    {
+      "kind": "operator-runbook",
+      "source": "operator:lumen-big:operator-runbooks",
+      "subject": "Produce a consolidated operator proving backlog and runbook set for Lumen",
+      "description": "Using the runtime audit and AIBTC readiness reports, produce a staged proving backlog and runbook set covering self-upgrade, wallet readiness, messaging readiness, and news readiness.",
+      "priority": 5,
+      "requested_profile": "proving-codex",
+      "payload": {
+        "objective": "Turn all prior analysis into an actionable proving agenda.",
+        "phase": "synthesize-and-handoff",
+        "scope": [
+          "runtime self-improvement",
+          "wallet readiness",
+          "messaging readiness",
+          "news readiness",
+          "verification sequencing"
+        ],
+        "allowed_write_paths": [
+          "state/artifacts/reports/",
+          "state/artifacts/plans/"
+        ],
+        "inputs": [
+          "state/artifacts/plans/lumen/proposal-first-runtime.md",
+          "state/artifacts/specs/lumen/lumen-builder-profile.md",
+          "state/artifacts/plans/lumen/proposal-first-implementation-plan.md",
+          "state/artifacts/reports/lumen/aibtc-wallet-readiness.md",
+          "state/artifacts/reports/lumen/aibtc-messaging-readiness.md",
+          "state/artifacts/reports/lumen/aibtc-news-readiness.md"
+        ],
+        "proposal_artifact": "plans/lumen/proving-program.md",
+        "acceptance_criteria": [
+          "Produces a sequenced backlog for the next implementation wave",
+          "Defines phase gates and success criteria",
+          "Maps each proving area to concrete next tasks",
+          "Keeps recommendations grounded in prior artifacts"
+        ],
+        "operator_goal": "Create the next major proving program for Lumen."
+      }
+    }
+  ]
+}

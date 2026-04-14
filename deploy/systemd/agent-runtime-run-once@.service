@@ -1,0 +1,13 @@
+[Unit]
+Description=Agent Runtime One-Shot Dispatch (%i)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/agent-runtime
+Environment=RUNTIME_CONFIG=%h/agent-runtime/deploy/%i/runtime.%i.json
+ExecStart=%h/.bun/bin/bun run src/cli.ts run-once --config ${RUNTIME_CONFIG}
+
+[Install]
+WantedBy=default.target

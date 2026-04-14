@@ -1,0 +1,18 @@
+{
+  "name": "agent-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "run-once": "bun run src/cli.ts run-once",
+    "status": "bun run src/cli.ts status",
+    "intake": "bun run src/cli.ts intake",
+    "healthcheck": "bun run src/cli.ts healthcheck",
+    "web": "bun run src/web.ts",
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "bun-types": "^1.3.12",
+    "typescript": "^6.0.2"
+  }
+}

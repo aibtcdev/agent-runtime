@@ -1,0 +1,8 @@
+{
+  "event": "discord.mention",
+  "channel": "community-updates",
+  "author": "whoabuddy",
+  "message": "Can Lumen explain what changed in the new agent-runtime work without giving raw diff noise?",
+  "reply_style": "short",
+  "operator_goal": "Reply as Lumen with a concise, story-first explanation."
+}

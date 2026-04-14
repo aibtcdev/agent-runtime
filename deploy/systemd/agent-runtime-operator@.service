@@ -1,0 +1,14 @@
+[Unit]
+Description=Agent Runtime Operator Dashboard (%i)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/agent-runtime
+ExecStart=%h/.bun/bin/bun run src/web.ts --config deploy/%i/runtime.%i.json --host 0.0.0.0 --port 4314
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

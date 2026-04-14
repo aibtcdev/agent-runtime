@@ -1,0 +1,14 @@
+node_modules/
+.DS_Store
+
+# Local runtime state
+state/
+deploy/lumen/state/
+
+# Local operator config
+config/runtime.json
+
+# Bun / temp
+*.db
+*.db-shm
+*.db-wal

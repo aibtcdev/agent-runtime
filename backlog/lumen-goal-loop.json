@@ -1,0 +1,40 @@
+{
+  "workflows": [
+    {
+      "template": "goal-loop",
+      "instance_key": "lumen-aibtc-activation-loop",
+      "context": {
+        "summary": "Lumen AIBTC activation proving loop",
+        "objective": "Plan, execute, and verify the work needed to move Lumen toward real AIBTC activation, iterating until the plan acceptance criteria are satisfied.",
+        "scope": [
+          "agent-runtime/src/",
+          "agent-runtime/profiles/",
+          "agent-runtime/deploy/lumen/",
+          "docs/aibtc-platform.md",
+          "docs/aibtc-news.md",
+          "deploy/lumen/state/artifacts/"
+        ],
+        "requested_profile": "proving-codex",
+        "plan_phase_skills": [
+          "planning",
+          "artifact-reporting"
+        ],
+        "verify_plan_phase_skills": [
+          "review",
+          "planning",
+          "artifact-reporting"
+        ],
+        "execute_phase_skills": [
+          "repo-edit",
+          "verification",
+          "artifact-reporting"
+        ],
+        "verify_execute_phase_skills": [
+          "review",
+          "verification",
+          "artifact-reporting"
+        ]
+      }
+    }
+  ]
+}

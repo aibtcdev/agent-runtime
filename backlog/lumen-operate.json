@@ -1,0 +1,205 @@
+{
+  "tasks": [
+    {
+      "kind": "campaign-bootstrap",
+      "source": "operator:lumen-operate:campaign-charter",
+      "subject": "Create the Lumen live operations campaign charter",
+      "description": "Define the mission, phase gates, permissions, and evidence model for Lumen live operations across AIBTC messaging, AIBTC News participation, recurring health checks, and autonomous backlog generation.",
+      "priority": 8,
+      "requested_profile": "proving-codex",
+      "payload": {
+        "mission": "Operate Lumen as a verified network participant with safe messaging, news, and self-monitoring behaviors.",
+        "phase": "charter",
+        "scope": [
+          "AIBTC messaging",
+          "AIBTC News participation",
+          "recurring health checks",
+          "autonomous follow-up generation"
+        ],
+        "allowed_write_scope": [
+          "state/artifacts/campaigns/",
+          "state/artifacts/plans/",
+          "state/artifacts/reports/",
+          "state/artifacts/specs/"
+        ],
+        "required_artifacts": [
+          "campaigns/lumen/live-operations-charter.md"
+        ],
+        "acceptance_criteria": [
+          "Defines safe operating boundaries",
+          "Defines human approval thresholds",
+          "Defines evidence requirements for autonomous actions",
+          "Defines campaign success and pause conditions"
+        ],
+        "operator_goal": "Create the governing charter for live operations."
+      }
+    },
+    {
+      "kind": "campaign-observe",
+      "source": "operator:lumen-operate:messaging-op-model",
+      "subject": "Design the messaging operating model for Lumen",
+      "description": "Define how Lumen should handle inbox reads, reply proposals, signed reply proofs, and message triage across safe and human-approved modes.",
+      "priority": 7,
+      "requested_profile": "proving-codex",
+      "payload": {
+        "mission": "Create the messaging operating model for Lumen live use.",
+        "phase": "observe-and-propose",
+        "scope": [
+          "inbox reads",
+          "reply proposals",
+          "signed replies",
+          "mark-read behavior",
+          "escalation thresholds"
+        ],
+        "allowed_write_scope": [
+          "state/artifacts/specs/",
+          "state/artifacts/reports/"
+        ],
+        "required_artifacts": [
+          "specs/lumen/messaging-operating-model.md"
+        ],
+        "acceptance_criteria": [
+          "Defines read-only vs write-capable modes",
+          "Defines when replies require approval",
+          "Defines evidence and audit trail requirements",
+          "Defines failure handling and message safety rules"
+        ],
+        "operator_goal": "Produce the messaging operating model for Lumen."
+      }
+    },
+    {
+      "kind": "campaign-observe",
+      "source": "operator:lumen-operate:news-op-model",
+      "subject": "Design the AIBTC News operating model for Lumen",
+      "description": "Define how Lumen should select beats, draft signals, validate claims, respect rate limits, and move from signal proposal to safe filing.",
+      "priority": 7,
+      "requested_profile": "proving-codex",
+      "payload": {
+        "mission": "Create the operating model for Lumen as an AIBTC News correspondent.",
+        "phase": "observe-and-propose",
+        "scope": [
+          "beat discovery",
+          "beat strategy",
+          "signal drafting",
+          "signal validation",
+          "rate-limit-aware filing",
+          "approval thresholds"
+        ],
+        "allowed_write_scope": [
+          "state/artifacts/specs/",
+          "state/artifacts/reports/"
+        ],
+        "required_artifacts": [
+          "specs/lumen/news-operating-model.md"
+        ],
+        "acceptance_criteria": [
+          "Defines beat selection logic",
+          "Defines proposal vs filing workflow",
+          "Defines rate-limit and quality controls",
+          "Defines what must be proven before autonomous filing"
+        ],
+        "operator_goal": "Produce the News operating model for Lumen."
+      }
+    },
+    {
+      "kind": "campaign-propose",
+      "source": "operator:lumen-operate:recurring-health-model",
+      "subject": "Design recurring health and readiness checks for Lumen live operations",
+      "description": "Define the recurring checks Lumen should perform on itself across runtime health, wallet state, registration, heartbeat, messaging readiness, and News readiness.",
+      "priority": 7,
+      "requested_profile": "proving-codex",
+      "payload": {
+        "mission": "Create the recurring self-monitoring model for Lumen operations.",
+        "phase": "propose",
+        "scope": [
+          "runtime health",
+          "wallet state",
+          "registration state",
+          "heartbeat freshness",
+          "messaging readiness",
+          "news readiness"
+        ],
+        "allowed_write_scope": [
+          "state/artifacts/specs/",
+          "state/artifacts/reports/"
+        ],
+        "required_artifacts": [
+          "specs/lumen/recurring-health-model.md"
+        ],
+        "acceptance_criteria": [
+          "Defines recurring checks and cadence",
+          "Defines pass/warn/fail thresholds",
+          "Defines emitted artifacts and alerts",
+          "Defines when health issues should auto-generate backlog items"
+        ],
+        "operator_goal": "Produce the recurring health model for Lumen."
+      }
+    },
+    {
+      "kind": "campaign-plan",
+      "source": "operator:lumen-operate:autonomy-rules",
+      "subject": "Define Lumen autonomy rules for live operations",
+      "description": "Define exactly what Lumen may do autonomously, what requires review, and what must be blocked across runtime edits, wallet actions, messaging, and News participation.",
+      "priority": 7,
+      "requested_profile": "proving-codex",
+      "payload": {
+        "mission": "Define autonomy boundaries for Lumen live operation.",
+        "phase": "plan",
+        "scope": [
+          "self-modification",
+          "wallet actions",
+          "network writes",
+          "messaging replies",
+          "News filing",
+          "backlog generation"
+        ],
+        "allowed_write_scope": [
+          "state/artifacts/specs/",
+          "state/artifacts/plans/"
+        ],
+        "required_artifacts": [
+          "specs/lumen/autonomy-rules.md"
+        ],
+        "acceptance_criteria": [
+          "Defines allowed, approval-required, and forbidden actions",
+          "Defines evidence requirements for autonomous actions",
+          "Defines pause conditions and stop-loss rules",
+          "Defines how autonomy can expand after proofs succeed"
+        ],
+        "operator_goal": "Create the autonomy policy for Lumen live operations."
+      }
+    },
+    {
+      "kind": "campaign-handoff",
+      "source": "operator:lumen-operate:operations-program",
+      "subject": "Produce the staged live-operations program for Lumen",
+      "description": "Combine the messaging, News, health, and autonomy models into a staged live-operations program with gates, rollout stages, and supervised autonomy targets.",
+      "priority": 6,
+      "requested_profile": "proving-codex",
+      "payload": {
+        "mission": "Create the concrete rollout plan for Lumen live operations.",
+        "phase": "handoff",
+        "scope": [
+          "messaging",
+          "news",
+          "health checks",
+          "autonomy expansion",
+          "operator oversight"
+        ],
+        "allowed_write_scope": [
+          "state/artifacts/plans/"
+        ],
+        "required_artifacts": [
+          "plans/lumen/live-operations-program.md"
+        ],
+        "acceptance_criteria": [
+          "Defines rollout stages and gates",
+          "Defines how success is measured at each stage",
+          "Defines required proofs before autonomy increases",
+          "Produces the next backlog shape for implementation"
+        ],
+        "operator_goal": "Create the staged live-operations program for Lumen."
+      }
+    }
+  ]
+}

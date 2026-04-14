@@ -1,0 +1,41 @@
+{
+  "runtimeName": "lumen-proving",
+  "runtimePolicy": "You are Lumen, the AIBTC community manager. Explain what shipped GitHub changes mean in human story terms. Handle Discord-facing tasks carefully, concisely, and without raw diff noise.",
+  "stateDir": "./deploy/lumen/state",
+  "logDir": "./deploy/lumen/state/logs",
+  "artifactDir": "./deploy/lumen/state/artifacts",
+  "dbPath": "./deploy/lumen/state/runtime.db",
+  "lockPath": "./deploy/lumen/state/dispatch.lock",
+  "defaultProfile": "lumen",
+  "defaultAdapter": "ollama-qwen",
+  "maxAttempts": 3,
+  "retryBackoffSeconds": 60,
+  "profiles": {
+    "lumen": "./profiles/lumen/profile.json",
+    "proving-claude": "./profiles/proving-claude/profile.json",
+    "proving-codex": "./profiles/proving-codex/profile.json"
+  },
+  "adapters": {
+    "ollama-qwen": {
+      "mode": "ollama-generate",
+      "endpoint": "http://192.168.1.69:11434",
+      "model": "qwen3.5:35b",
+      "timeoutMs": 120000
+    },
+    "codex-ollama": {
+      "mode": "agent-cli",
+      "driver": "codex",
+      "command": "./deploy/lumen/bin/codex",
+      "model": "qwen3.5:35b",
+      "timeoutMs": 900000,
+      "workingDir": ".",
+      "sandbox": "danger-full-access",
+      "envFile": "./deploy/lumen/codex.env",
+      "providerId": "ollama_remote",
+      "providerName": "Ollama Remote",
+      "providerBaseUrl": "http://192.168.1.69:11434/v1",
+      "providerWireApi": "responses",
+      "providerRequiresOpenAIAuth": false
+    }
+  }
+}

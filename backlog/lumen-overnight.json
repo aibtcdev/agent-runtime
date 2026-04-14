@@ -1,0 +1,183 @@
+{
+  "workflows": [
+    {
+      "template": "goal-loop",
+      "instance_key": "lumen-overnight-activation-proof",
+      "context": {
+        "summary": "Overnight Lumen AIBTC activation proof loop",
+        "objective": "Drive Lumen toward a real AIBTC activation proof by planning, executing, and verifying the next highest-confidence activation slice. Do not stop at policy or speculation. The loop is only complete when the accepted plan goals are either proven with concrete artifacts and command evidence or reduced to a sharply evidenced blocker report that names the exact missing dependency, failing step, and next required operator action.",
+        "scope": [
+          "agent-runtime/src/",
+          "agent-runtime/backlog/",
+          "agent-runtime/deploy/lumen/",
+          "docs/aibtc-platform.md",
+          "docs/aibtc-news.md",
+          "deploy/lumen/state/artifacts/"
+        ],
+        "requested_profile": "proving-codex",
+        "plan_artifact": "plans/lumen/overnight-activation-proof-plan.md",
+        "plan_phase_skills": [
+          "planning",
+          "artifact-reporting"
+        ],
+        "verify_plan_phase_skills": [
+          "review",
+          "planning",
+          "artifact-reporting"
+        ],
+        "execute_phase_skills": [
+          "repo-edit",
+          "verification",
+          "artifact-reporting"
+        ],
+        "verify_execute_phase_skills": [
+          "review",
+          "verification",
+          "artifact-reporting"
+        ]
+      }
+    },
+    {
+      "template": "goal-loop",
+      "instance_key": "lumen-overnight-wallet-proof",
+      "context": {
+        "summary": "Overnight wallet proof loop",
+        "objective": "Plan, execute, and verify the wallet creation and unlock proof sequence end to end. Prefer real commands, observed outputs, and produced evidence artifacts over design work. The loop is only complete when wallet creation and unlock are verified with concrete evidence or when the exact blocker is reproduced and written down with commands attempted, outputs observed, and the minimum next action required to continue.",
+        "scope": [
+          "agent-runtime/src/",
+          "agent-runtime/deploy/lumen/",
+          "docs/aibtc-platform.md",
+          "deploy/lumen/state/artifacts/"
+        ],
+        "requested_profile": "proving-codex",
+        "plan_artifact": "plans/lumen/overnight-wallet-proof-plan.md",
+        "plan_phase_skills": [
+          "planning",
+          "artifact-reporting"
+        ],
+        "verify_plan_phase_skills": [
+          "review",
+          "planning",
+          "artifact-reporting"
+        ],
+        "execute_phase_skills": [
+          "repo-edit",
+          "verification",
+          "artifact-reporting"
+        ],
+        "verify_execute_phase_skills": [
+          "review",
+          "verification",
+          "artifact-reporting"
+        ]
+      }
+    },
+    {
+      "template": "goal-loop",
+      "instance_key": "lumen-overnight-registration-proof",
+      "context": {
+        "summary": "Overnight registration and verify proof loop",
+        "objective": "Plan, execute, and verify the registration, verify, and heartbeat proof path with concrete request shapes, signatures, commands, responses, and captured evidence. This is complete only when the loop either proves a working registration or verification path with artifacts or produces a fully evidenced failure report that isolates the precise API, signature, credential, or runtime blocker preventing success.",
+        "scope": [
+          "agent-runtime/src/",
+          "agent-runtime/deploy/lumen/",
+          "docs/aibtc-platform.md",
+          "deploy/lumen/state/artifacts/"
+        ],
+        "requested_profile": "proving-codex",
+        "plan_artifact": "plans/lumen/overnight-registration-proof-plan.md",
+        "plan_phase_skills": [
+          "planning",
+          "artifact-reporting"
+        ],
+        "verify_plan_phase_skills": [
+          "review",
+          "planning",
+          "artifact-reporting"
+        ],
+        "execute_phase_skills": [
+          "repo-edit",
+          "verification",
+          "artifact-reporting"
+        ],
+        "verify_execute_phase_skills": [
+          "review",
+          "verification",
+          "artifact-reporting"
+        ]
+      }
+    },
+    {
+      "template": "goal-loop",
+      "instance_key": "lumen-overnight-live-operations",
+      "context": {
+        "summary": "Overnight live operations loop",
+        "objective": "Plan, execute, and verify the messaging, News, recurring health-check, and supervised autonomy operating model for live Lumen work. Avoid open-ended policy drafting unless it directly unblocks execution. Completion requires concrete runbooks, runnable checks, or verified runtime changes with evidence that the operating model can actually be supervised and used.",
+        "scope": [
+          "agent-runtime/src/",
+          "agent-runtime/profiles/",
+          "agent-runtime/deploy/lumen/",
+          "docs/aibtc-platform.md",
+          "docs/aibtc-news.md",
+          "deploy/lumen/state/artifacts/"
+        ],
+        "requested_profile": "proving-codex",
+        "plan_artifact": "plans/lumen/overnight-live-operations-plan.md",
+        "plan_phase_skills": [
+          "planning",
+          "artifact-reporting"
+        ],
+        "verify_plan_phase_skills": [
+          "review",
+          "planning",
+          "artifact-reporting"
+        ],
+        "execute_phase_skills": [
+          "repo-edit",
+          "verification",
+          "artifact-reporting"
+        ],
+        "verify_execute_phase_skills": [
+          "review",
+          "verification",
+          "artifact-reporting"
+        ]
+      }
+    },
+    {
+      "template": "goal-loop",
+      "instance_key": "lumen-overnight-runtime-audit",
+      "context": {
+        "summary": "Overnight goal-loop runtime audit",
+        "objective": "Plan, execute, and verify the next hardening work for the goal-loop runtime by auditing real task behavior, artifact injection, backlog seeding, and remaining deterministic failure modes. This loop is only complete when any identified hardening gap is either fixed in code with tests and verification evidence or captured in a blocker artifact that explains why the runtime cannot yet close the gap autonomously.",
+        "scope": [
+          "agent-runtime/src/",
+          "agent-runtime/backlog/",
+          "agent-runtime/state/artifacts/snapshots/",
+          "deploy/lumen/state/artifacts/"
+        ],
+        "requested_profile": "proving-codex",
+        "plan_artifact": "plans/lumen/overnight-runtime-audit-plan.md",
+        "plan_phase_skills": [
+          "planning",
+          "artifact-reporting"
+        ],
+        "verify_plan_phase_skills": [
+          "review",
+          "planning",
+          "artifact-reporting"
+        ],
+        "execute_phase_skills": [
+          "repo-edit",
+          "verification",
+          "artifact-reporting"
+        ],
+        "verify_execute_phase_skills": [
+          "review",
+          "verification",
+          "artifact-reporting"
+        ]
+      }
+    }
+  ]
+}

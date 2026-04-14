@@ -1,0 +1,11 @@
+[Unit]
+Description=Agent Runtime Dispatch Timer (%i)
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=10s
+Unit=agent-runtime-run-once@%i.service
+Persistent=true
+
+[Install]
+WantedBy=timers.target

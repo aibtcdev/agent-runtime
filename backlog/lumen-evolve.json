@@ -1,0 +1,196 @@
+{
+  "tasks": [
+    {
+      "kind": "campaign-bootstrap",
+      "source": "operator:lumen-evolve:campaign-charter",
+      "subject": "Create the Lumen self-evolution campaign charter",
+      "description": "Define the campaign mission, phase gates, allowed write scope, verification rules, rollback expectations, and evidence artifacts for evolving Lumen into a proposal-first builder.",
+      "priority": 8,
+      "requested_profile": "proving-codex",
+      "payload": {
+        "mission": "Evolve Lumen from a content-oriented runtime into a proposal-first builder with bounded self-modification and verification-first execution.",
+        "phase": "charter",
+        "scope": [
+          "agent-runtime/src/",
+          "agent-runtime/profiles/",
+          "agent-runtime/deploy/lumen/",
+          "agents/lumen/"
+        ],
+        "allowed_write_scope": [
+          "state/artifacts/campaigns/",
+          "state/artifacts/plans/",
+          "state/artifacts/reports/",
+          "state/artifacts/specs/"
+        ],
+        "required_artifacts": [
+          "campaigns/lumen/self-evolution-charter.md"
+        ],
+        "acceptance_criteria": [
+          "Defines mission, phases, gates, and evidence model",
+          "Defines allowed and disallowed self-modification behavior",
+          "Defines rollback and escalation rules",
+          "Defines completion criteria for the campaign"
+        ],
+        "operator_goal": "Create the governing charter for Lumen self-evolution."
+      }
+    },
+    {
+      "kind": "campaign-observe",
+      "source": "operator:lumen-evolve:runtime-gap-analysis",
+      "subject": "Analyze current runtime gaps blocking proposal-first engineering",
+      "description": "Inspect the runtime, profile, workflow, and artifact behavior to identify what prevents Lumen from operating as a proposal-first builder. Focus on write permissions, artifact collisions, grounding drift, and missing verification controls.",
+      "priority": 8,
+      "requested_profile": "proving-codex",
+      "payload": {
+        "mission": "Identify the concrete gaps between the current Lumen runtime and the desired builder model.",
+        "phase": "observe",
+        "scope": [
+          "agent-runtime/src/runtime.ts",
+          "agent-runtime/src/workflows.ts",
+          "agent-runtime/src/cli.ts",
+          "agent-runtime/src/report.ts",
+          "agent-runtime/profiles/lumen/profile.json",
+          "agent-runtime/deploy/lumen/runtime.lumen.json",
+          "deploy/lumen/state/artifacts/"
+        ],
+        "allowed_write_scope": [
+          "state/artifacts/reports/"
+        ],
+        "required_artifacts": [
+          "reports/lumen/runtime-gap-analysis.md"
+        ],
+        "acceptance_criteria": [
+          "Identifies concrete failure modes from observed runs",
+          "Separates runtime gaps from profile/policy gaps",
+          "Identifies which gaps require code changes vs process changes",
+          "Produces an implementation-ready problem list"
+        ],
+        "operator_goal": "Produce the gap analysis that should drive all self-evolution work."
+      }
+    },
+    {
+      "kind": "campaign-propose",
+      "source": "operator:lumen-evolve:builder-spec",
+      "subject": "Write the builder-mode spec for Lumen",
+      "description": "Define the profile, policy, workflow, artifact, and verification behavior for a builder-capable Lumen mode. Include proposal requirements, implementation boundaries, verification rules, and refusal conditions.",
+      "priority": 8,
+      "requested_profile": "proving-codex",
+      "payload": {
+        "mission": "Specify the target operating model for Lumen as a bounded engineering agent.",
+        "phase": "propose",
+        "scope": [
+          "agent-runtime/profiles/",
+          "agent-runtime/src/",
+          "agent-runtime/deploy/lumen/"
+        ],
+        "allowed_write_scope": [
+          "state/artifacts/specs/"
+        ],
+        "required_artifacts": [
+          "specs/lumen/builder-mode.md"
+        ],
+        "acceptance_criteria": [
+          "Specifies profile changes, tool policy, and write policy",
+          "Specifies proposal, implementation, verification, and rollback artifacts",
+          "Specifies campaign/task state expectations",
+          "Specifies safety and refusal conditions"
+        ],
+        "operator_goal": "Create the engineering spec for Lumen builder mode."
+      }
+    },
+    {
+      "kind": "campaign-plan",
+      "source": "operator:lumen-evolve:implementation-plan",
+      "subject": "Plan the runtime changes required for Lumen builder mode",
+      "description": "Translate the builder spec into an implementation plan with exact files, changes, verification steps, and rollout sequence.",
+      "priority": 7,
+      "requested_profile": "proving-codex",
+      "payload": {
+        "mission": "Convert the builder-mode spec into an ordered implementation plan.",
+        "phase": "plan",
+        "scope": [
+          "agent-runtime/src/",
+          "agent-runtime/profiles/",
+          "agent-runtime/deploy/lumen/"
+        ],
+        "allowed_write_scope": [
+          "state/artifacts/plans/"
+        ],
+        "required_artifacts": [
+          "plans/lumen/builder-mode-implementation.md"
+        ],
+        "acceptance_criteria": [
+          "Lists exact files and responsibilities",
+          "Defines sequencing and dependency order",
+          "Defines tests and runtime checks for each change",
+          "Defines rollback steps for each stage"
+        ],
+        "operator_goal": "Produce the implementation plan for upgrading Lumen."
+      }
+    },
+    {
+      "kind": "campaign-verify",
+      "source": "operator:lumen-evolve:verification-strategy",
+      "subject": "Define the verification strategy for self-evolution changes",
+      "description": "Create the test and runtime verification strategy required before Lumen builder-mode changes can be considered proven. Include snapshots, seeded tasks, healthchecks, and artifact validation.",
+      "priority": 7,
+      "requested_profile": "proving-codex",
+      "payload": {
+        "mission": "Define how Lumen self-upgrades will be verified with evidence.",
+        "phase": "verify-design",
+        "scope": [
+          "tests",
+          "healthchecks",
+          "snapshot/report flows",
+          "seeded backlogs",
+          "artifact validation"
+        ],
+        "allowed_write_scope": [
+          "state/artifacts/reports/",
+          "state/artifacts/plans/"
+        ],
+        "required_artifacts": [
+          "reports/lumen/self-evolution-verification-strategy.md"
+        ],
+        "acceptance_criteria": [
+          "Defines pre-change and post-change verification",
+          "Defines task-quality and artifact-quality checks",
+          "Defines failure classification and rollback triggers",
+          "Produces a repeatable proving loop"
+        ],
+        "operator_goal": "Create the verification framework for all future self-evolution work."
+      }
+    },
+    {
+      "kind": "campaign-handoff",
+      "source": "operator:lumen-evolve:campaign-program",
+      "subject": "Produce the sequenced self-evolution program backlog",
+      "description": "Using the charter, gap analysis, builder spec, implementation plan, and verification strategy, produce the exact next backlog for implementing Lumen builder mode.",
+      "priority": 6,
+      "requested_profile": "proving-codex",
+      "payload": {
+        "mission": "Turn campaign analysis into the next execution backlog.",
+        "phase": "handoff",
+        "scope": [
+          "runtime changes",
+          "profile changes",
+          "verification changes",
+          "rollout sequence"
+        ],
+        "allowed_write_scope": [
+          "state/artifacts/plans/"
+        ],
+        "required_artifacts": [
+          "plans/lumen/self-evolution-program.md"
+        ],
+        "acceptance_criteria": [
+          "Produces a sequenced execution backlog",
+          "Maps every planned item to a verifying artifact",
+          "Separates MVP upgrade steps from later hardening steps",
+          "Keeps recommendations bounded to observed evidence"
+        ],
+        "operator_goal": "Generate the next execution program for Lumen self-evolution."
+      }
+    }
+  ]
+}

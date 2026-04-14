@@ -1,0 +1,202 @@
+{
+  "tasks": [
+    {
+      "kind": "campaign-bootstrap",
+      "source": "operator:lumen-activate:campaign-charter",
+      "subject": "Create the Lumen AIBTC activation campaign charter",
+      "description": "Define the activation mission, proof gates, safety rules, secret/tool dependencies, and evidence artifacts for getting Lumen onto AIBTC with wallet, registration, verification, and heartbeat support.",
+      "priority": 8,
+      "requested_profile": "proving-codex",
+      "payload": {
+        "mission": "Activate Lumen as a real AIBTC participant with proven wallet, registration, verify, and heartbeat flows.",
+        "phase": "charter",
+        "scope": [
+          "wallet tooling",
+          "AIBTC registration",
+          "identity verification",
+          "heartbeat",
+          "runtime integration"
+        ],
+        "allowed_write_scope": [
+          "state/artifacts/campaigns/",
+          "state/artifacts/plans/",
+          "state/artifacts/reports/",
+          "state/artifacts/specs/"
+        ],
+        "required_artifacts": [
+          "campaigns/lumen/aibtc-activation-charter.md"
+        ],
+        "acceptance_criteria": [
+          "Defines phase gates from readiness to live proof",
+          "Defines secret/tool prerequisites",
+          "Defines safety boundaries for real network interaction",
+          "Defines required evidence for activation success"
+        ],
+        "operator_goal": "Create the governing charter for AIBTC activation."
+      }
+    },
+    {
+      "kind": "campaign-observe",
+      "source": "operator:lumen-activate:wallet-tooling-inventory",
+      "subject": "Inventory wallet, signing, and AIBTC tooling available to Lumen",
+      "description": "Identify what wallet, signing, MCP, CLI, and API tooling is already available in the runtime or host environment, and what is missing for create/unlock/register/heartbeat proof.",
+      "priority": 8,
+      "requested_profile": "proving-codex",
+      "payload": {
+        "mission": "Establish the real current tool inventory for AIBTC activation.",
+        "phase": "observe",
+        "scope": [
+          "local tooling",
+          "MCP tooling",
+          "wallet commands",
+          "signature support",
+          "environment dependencies"
+        ],
+        "allowed_write_scope": [
+          "state/artifacts/reports/"
+        ],
+        "required_artifacts": [
+          "reports/lumen/wallet-tooling-inventory.md"
+        ],
+        "acceptance_criteria": [
+          "Lists available tools and missing tools",
+          "Maps tools to required activation steps",
+          "Identifies blockers caused by missing secrets or unsupported formats",
+          "Produces grounded evidence for every inventory claim"
+        ],
+        "operator_goal": "Create the wallet/tooling inventory for activation."
+      }
+    },
+    {
+      "kind": "campaign-observe",
+      "source": "operator:lumen-activate:activation-gap-analysis",
+      "subject": "Analyze the gaps blocking end-to-end AIBTC activation",
+      "description": "Using the docs, previous readiness reports, and tooling inventory, identify what is still missing before Lumen can prove create/unlock/register/verify/heartbeat end to end.",
+      "priority": 8,
+      "requested_profile": "proving-codex",
+      "payload": {
+        "mission": "Turn readiness analysis into a concrete activation blocker map.",
+        "phase": "observe",
+        "scope": [
+          "wallet creation",
+          "wallet unlock",
+          "registration",
+          "verify endpoint",
+          "heartbeat",
+          "state persistence"
+        ],
+        "allowed_write_scope": [
+          "state/artifacts/reports/"
+        ],
+        "required_artifacts": [
+          "reports/lumen/aibtc-activation-gap-analysis.md"
+        ],
+        "acceptance_criteria": [
+          "Separates tool gaps, secret gaps, and code gaps",
+          "Defines what can be proven now vs later",
+          "Defines exact blockers for each activation phase",
+          "Produces an evidence-backed blocker list"
+        ],
+        "operator_goal": "Create the activation blocker map for Lumen."
+      }
+    },
+    {
+      "kind": "campaign-propose",
+      "source": "operator:lumen-activate:integration-spec",
+      "subject": "Write the spec for Lumen wallet and AIBTC activation integration",
+      "description": "Write the implementation-grade spec for how Lumen should integrate wallet support, registration, verify, and heartbeat into its runtime and ops model.",
+      "priority": 7,
+      "requested_profile": "proving-codex",
+      "payload": {
+        "mission": "Specify how Lumen becomes an activated AIBTC participant.",
+        "phase": "propose",
+        "scope": [
+          "wallet interfaces",
+          "runtime integration points",
+          "registration flow",
+          "verify flow",
+          "heartbeat flow",
+          "operator controls"
+        ],
+        "allowed_write_scope": [
+          "state/artifacts/specs/"
+        ],
+        "required_artifacts": [
+          "specs/lumen/aibtc-activation-integration.md"
+        ],
+        "acceptance_criteria": [
+          "Defines exact interfaces and dependencies",
+          "Defines persistence and verification expectations",
+          "Defines safety/rollback controls for real operations",
+          "Defines implementation boundaries clearly"
+        ],
+        "operator_goal": "Produce the activation integration spec for Lumen."
+      }
+    },
+    {
+      "kind": "campaign-plan",
+      "source": "operator:lumen-activate:implementation-program",
+      "subject": "Produce the staged implementation program for AIBTC activation",
+      "description": "Convert the activation spec and gap analysis into a staged implementation program covering prerequisites, safe proofs, and end-to-end activation.",
+      "priority": 7,
+      "requested_profile": "proving-codex",
+      "payload": {
+        "mission": "Turn AIBTC activation analysis into a concrete execution program.",
+        "phase": "plan",
+        "scope": [
+          "tooling enablement",
+          "runtime changes",
+          "secret dependencies",
+          "proof sequencing",
+          "rollback points"
+        ],
+        "allowed_write_scope": [
+          "state/artifacts/plans/"
+        ],
+        "required_artifacts": [
+          "plans/lumen/aibtc-activation-program.md"
+        ],
+        "acceptance_criteria": [
+          "Defines sequence from preparation to activation proof",
+          "Defines prerequisites and branch points",
+          "Defines evidence artifacts for each stage",
+          "Defines safe stopping points and escalation rules"
+        ],
+        "operator_goal": "Create the activation execution program for Lumen."
+      }
+    },
+    {
+      "kind": "campaign-handoff",
+      "source": "operator:lumen-activate:operator-runbooks",
+      "subject": "Produce the operator runbooks for wallet, registration, verify, and heartbeat proofs",
+      "description": "Create the practical runbooks an operator would use to carry out or supervise Lumen AIBTC activation.",
+      "priority": 6,
+      "requested_profile": "proving-codex",
+      "payload": {
+        "mission": "Turn the activation program into operator-usable runbooks.",
+        "phase": "handoff",
+        "scope": [
+          "wallet create/unlock",
+          "register",
+          "verify",
+          "heartbeat",
+          "evidence capture"
+        ],
+        "allowed_write_scope": [
+          "state/artifacts/reports/",
+          "state/artifacts/plans/"
+        ],
+        "required_artifacts": [
+          "reports/lumen/aibtc-activation-runbooks.md"
+        ],
+        "acceptance_criteria": [
+          "Defines step-by-step operator actions",
+          "Defines expected outputs and failure modes",
+          "Defines required evidence capture",
+          "Defines when to stop and escalate"
+        ],
+        "operator_goal": "Create the runbooks for supervised AIBTC activation."
+      }
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "event": "pull_request.closed",
+  "repository": "aibtcdev/agent-runtime",
+  "title": "Extract shared runtime skeleton",
+  "number": 7,
+  "author": "arc0btc",
+  "url": "https://github.com/aibtcdev/agent-runtime/pull/7",
+  "merged": true,
+  "summary": "Introduces a shared runtime skeleton with profile-based dispatch and Ollama proving adapter.",
+  "operator_question": "Explain what this shipped change means for operators and the AIBTC community."
+}
