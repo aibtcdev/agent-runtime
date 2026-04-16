@@ -58,23 +58,67 @@ If this moves into `tx-schemas`, the package should expose stable schemas for:
 
 This must be separate from the runtime engine.
 
+An AGENT is the durable top-level entity (one per VM). It carries three identity faces simultaneously:
+
+- **Internal identity** — the given name the operator and peer agents address. Always exists, stable across the agent's lifetime. Examples: `arc`, `arc0btc`, `spark`, `loom`, `forge`, `lumen`.
+- **External identity** — the AIBTC-registered agent name, derived from the agent's segwit address and resolvable via AIBTC API. Examples: "Trustless Indra", "Rising Leviathan". Acquired via wallet signature registration; may be absent before registration.
+- **On-chain identity** — an ERC-8004-compatible Clarity contract entry carrying validation + reputation state. Queryable by judges and peers.
+
+AGENT identity is durable. Subagents (see §3) are ephemeral `(agent, skill)` pairs whose variant lineage evolves; the AGENT behind them does not.
+
 ```ts
 type AgentIdentity = {
-  agent_id: string;           // lumen, arc, loom, forge
-  display_name: string;       // Lumen, Arc
-  codename?: string;          // Trustless Indra
-  purpose: string;            // short operational purpose
-  host?: string;              // VM host or DNS
-  user?: string;              // ssh user if relevant
+  agent_id: string;                      // canonical key; matches internal_name
+  internal_name: string;                 // arc, loom, forge, lumen, spark
+  external_name?: {                      // AIBTC-registered, wallet-derived
+    name: string;                        // "Trustless Indra", "Rising Leviathan"
+    registered_at?: string;
+    source: "aibtc-api" | "local-cache";
+    wallet_ref: string;                  // segwit address that authored the registration
+  };
+  onchain_identity?: {                   // ERC-8004-compatible Clarity contract
+    contract: string;                    // SPXXX.identity-registry
+    token_id?: string;
+    reputation_ref?: string;             // contract/method to read reputation summary
+  };
+  display_name: string;                  // UI label; often same as internal_name capitalized
+  codename?: string;                     // legacy alias retained for compatibility
+  purpose_ref?: string;                  // path to PURPOSE.md artifact (see §1b)
+  soul_ref?: string;                     // path to SOUL.md artifact (see §1b)
+  host?: string;
+  user?: string;
   runtime_instance_id?: string;
   metadata?: Record<string, unknown>;
 };
 ```
 
-Notes:
+Invariants:
 
 - The runtime must not hardcode per-agent identity the way `arc-starter/src/identity.ts` does.
-- Wallet and on-chain identity are first-class for your agents, but they should still be data, not engine code.
+- `internal_name` is load-bearing; `external_name` and `onchain_identity` may be absent but must never override the internal name.
+- Wallet and on-chain identity are first-class but remain data, not engine code.
+
+## 1b. Agent Constitution
+
+Each AGENT carries a constitution — two documents, written by the agent, versioned as artifacts, hashed into every bundle the agent produces (see runtime planning doc, Proposal 0005.5).
+
+```ts
+type AgentConstitution = {
+  agent_id: string;
+  soul_path: string;                     // SOUL.md — identity, values, communication style
+  purpose_path: string;                  // PURPOSE.md — goals, weighted self-eval metrics
+  soul_hash: string;                     // content hash at time of bundle compilation
+  purpose_hash: string;
+  version: string;                       // semver or ISO8601 revision marker
+  revised_at: string;
+};
+```
+
+Invariants:
+
+- SOUL.md and PURPOSE.md are AGENT-level, not per-subagent. A subagent inherits its agent's constitution; it does not carry its own.
+- Constitution changes go through the proposal lane (see runtime planning doc) — an agent may draft a revision, but the operator accepts.
+- The constitution hash is a bundle input. Two ticks with the same `(bundle_hash, variant_id)` must produce comparable outcomes — which requires the constitution to be pinned, not swapped mid-run.
 
 ## 1a. Wallet Identity
 
@@ -89,13 +133,16 @@ type WalletIdentity = {
   public_key?: string;
   name?: string;                  // BNS or similar name
   capabilities?: string[];        // sign, heartbeat, message, claim, publish
+  onchain_identity_contract?: string;  // ERC-8004 Clarity contract principal, if linked
+  reputation_ref?: string;             // contract/method for reputation reads
   metadata?: Record<string, unknown>;
 };
 ```
 
-Invariant:
+Invariants:
 
 - Wallet identity is attached to the agent through data records, not embedded constants.
+- When `onchain_identity_contract` is set, it must match the `onchain_identity.contract` in `AgentIdentity` (§1). The two records are joined by `agent_id`; conflicts are a bug, not a merge.
 
 ## 2. Adapter Config
 
@@ -171,18 +218,20 @@ Invariant:
 - `script` is first-class for deterministic or repetitive work that does not need an LLM call.
 - Every adapter kind must emit the same `TaskAttempt` evidence bundle shape.
 
-## 3. Agent Profile
+## 3. Subagent Profile
 
-Profiles choose behavior without baking identity into the engine.
+A SUBAGENT is the `(agent, skill)` pair a task is delegated to. The subagent profile describes what that pair can do — adapter wiring, skill set, result policies. It never re-declares AGENT identity (§1) or constitution (§1b); those are inherited at bundle-compile time.
+
+Profiles choose behavior without baking identity into the engine. In the planning doc's market framing, a subagent's variant lineage is `(skill_id, skill_version, agent_def_version)` — the profile is the static shape; the variant is what evolves.
 
 ```ts
-type AgentProfile = {
-  profile_id: string;
+type SubagentProfile = {
+  profile_id: string;                       // formerly "agent profile"
   style: "claude-like" | "codex-like" | "hermes-like";
-  role: string;
+  role: string;                             // operational role, not identity
   default_adapter_id: string;
   default_model?: string;
-  prompt_parts: string[];
+  prompt_parts: string[];                   // operational framing, not SOUL content
   skill_ids: string[];
   context_policy: {
     max_prompt_chars: number;
@@ -196,9 +245,11 @@ type AgentProfile = {
 };
 ```
 
-Invariant:
+Invariants:
 
 - Fields in this schema must either be enforced by the runtime or removed.
+- `prompt_parts` is operational framing (how to handle this role's tasks). It does not duplicate SOUL.md — the constitution is loaded separately via the bundle.
+- A subagent has no identity of its own. Its identity is `(agent_id, profile_id, variant_id)` composed at dispatch time.
 
 ## 4. Skill Manifest
 
