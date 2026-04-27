@@ -38,6 +38,8 @@ Add four things together:
 3. An atomic `claimNextTask()` transaction that selects a task and creates its `task_attempts` row in one SQL transaction.
 4. A boot-time sweep that converts any `running` rows left over from a prior process into `retryable_failure`.
 
+`runner_id` is a process-ownership token generated once at runtime startup and reused for every attempt that process creates. For the first implementation it SHOULD be a stable string derived from host identity, PID, and process start timestamp, for example `<hostname>:<pid>:<started_at>`.
+
 Lifecycle for one tick:
 
 1. **Claim (atomic).** `BEGIN IMMEDIATE; select highest-priority eligible task; update to status=running; insert task_attempts row; insert task_claimed event; COMMIT.` No bundle row yet. No lease fields.
@@ -278,6 +280,15 @@ Bundle file contract on disk:
 
 - JSON: `state/artifacts/bundles/<yyyy-mm-dd>/<bundle_id>.json`
 - Prompt: `state/artifacts/bundles/<yyyy-mm-dd>/<bundle_id>.prompt.txt`
+
+Dispatch lock file contract on disk:
+
+- Path: `lockPath` from runtime config
+- Format: UTF-8 JSON
+- Required keys: `pid` (number), `runner_id` (string), `created_at` (ISO8601 string)
+- The runtime writes this metadata immediately after acquiring the exclusive file lock.
+- Startup stale-lock reclaim reads the JSON and removes the file only when the recorded PID is not live.
+- If the file is malformed or empty, startup MAY treat it as stale and replace it before claiming work, but MUST emit `dispatch_lock_stale_cleared` with a reason.
 
 No lease fields are added to `tasks`. No `runner_id`, `heartbeat_at`, or `lease_expires_at` on the task row.
 

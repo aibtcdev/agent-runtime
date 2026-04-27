@@ -1,41 +1,42 @@
 {
   "runtimeName": "agent-runtime-local",
   "runtimePolicy": "You are running inside the shared agent runtime proof. Follow the selected profile, complete the task, and return concise structured output.",
-  "stateDir": "./state",
-  "logDir": "./state/logs",
-  "artifactDir": "./state/artifacts",
-  "dbPath": "./state/runtime.db",
-  "lockPath": "./state/dispatch.lock",
+  "stateDir": "../state",
+  "logDir": "../state/logs",
+  "artifactDir": "../state/artifacts",
+  "dbPath": "../state/runtime.db",
+  "lockPath": "../state/dispatch.lock",
   "defaultProfile": "lumen",
   "defaultAdapter": "ollama-qwen",
   "maxAttempts": 3,
   "retryBackoffSeconds": 60,
   "profiles": {
-    "lumen": "./profiles/lumen/profile.json",
-    "proving-claude": "./profiles/proving-claude/profile.json",
-    "proving-codex": "./profiles/proving-codex/profile.json"
+    "lumen": "../profiles/lumen/profile.json",
+    "proving-claude": "../profiles/proving-claude/profile.json",
+    "proving-codex": "../profiles/proving-codex/profile.json"
   },
   "adapters": {
     "ollama-qwen": {
       "mode": "ollama-generate",
       "endpoint": "http://192.168.1.69:11434",
-      "model": "qwen3.5:35b",
+      "model": "qwen3.6:35b",
       "timeoutMs": 120000
     },
     "codex-ollama": {
       "mode": "agent-cli",
       "driver": "codex",
       "command": "codex",
-      "model": "qwen3.5:35b",
+      "model": "qwen3.6:35b",
       "timeoutMs": 900000,
-      "workingDir": ".",
+      "workingDir": "..",
       "sandbox": "workspace-write",
-      "envFile": "./config/codex.env",
+      "envFile": "./codex.env",
       "providerId": "ollama_remote",
       "providerName": "Ollama Remote",
       "providerBaseUrl": "http://192.168.1.69:11434/v1",
       "providerWireApi": "responses",
-      "providerRequiresOpenAIAuth": false
+      "providerRequiresOpenAIAuth": false,
+      "autonomy": "trusted-vm"
     }
   }
 }

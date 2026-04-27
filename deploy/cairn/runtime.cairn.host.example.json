@@ -1,0 +1,26 @@
+{
+  "extends": "./runtime.cairn.json",
+  "defaultAdapter": "codex-ollama",
+  "adapters": {
+    "claude-ollama": {
+      "mode": "agent-cli",
+      "driver": "claude-code",
+      "command": "/home/dev/.local/bin/claude",
+      "model": "qwen3.6:35b",
+      "timeoutMs": 900000,
+      "workingDir": ".",
+      "envFile": "/home/dev/.claude-ollama-qwen36",
+      "settingsFile": "/home/dev/.claude/settings.json",
+      "autonomy": "trusted-vm"
+    },
+    "hermes-ollama": {
+      "mode": "agent-cli",
+      "driver": "hermes-agent",
+      "command": "/home/dev/.local/bin/hermes",
+      "model": "qwen3.6:35b",
+      "timeoutMs": 900000,
+      "workingDir": ".",
+      "autonomy": "trusted-vm"
+    }
+  }
+}

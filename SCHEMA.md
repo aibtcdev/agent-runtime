@@ -160,6 +160,11 @@ type AdapterConfig =
       env_file?: string;
       env?: Record<string, string>;
       model?: string;
+      autonomy?: {
+        profile: "restricted" | "trusted-vm";
+        required_args?: string[];
+        required_settings_files?: string[];
+      };
       extra_args?: string[];
     }
   | {
@@ -179,6 +184,10 @@ type AdapterConfig =
         wire_api?: "responses";
         requires_openai_auth?: boolean;
       };
+      autonomy?: {
+        profile: "restricted" | "trusted-vm";
+        required_args?: string[];
+      };
       extra_args?: string[];
     }
   | {
@@ -191,6 +200,10 @@ type AdapterConfig =
       env_file?: string;
       env?: Record<string, string>;
       model?: string;
+      autonomy?: {
+        profile: "restricted" | "trusted-vm";
+        required_args?: string[];
+      };
       extra_args?: string[];
     }
   | {
@@ -208,6 +221,9 @@ type AdapterConfig =
       timeout_ms: number;
       env_file?: string;
       env?: Record<string, string>;
+      autonomy?: {
+        profile: "runtime-native";
+      };
       extra_args?: string[];
     };
 ```
@@ -217,6 +233,7 @@ Invariant:
 - Hermes Agent is treated as another harness adapter, not a special autonomous runtime.
 - `script` is first-class for deterministic or repetitive work that does not need an LLM call.
 - Every adapter kind must emit the same `TaskAttempt` evidence bundle shape.
+- Harness adapters that rely on trusted-VM autonomy must declare that posture explicitly instead of burying it in `extra_args`.
 
 ## 3. Subagent Profile
 
@@ -354,7 +371,7 @@ type TaskRecord = {
   requested_profile_id: string;
   requested_adapter_id: string | null;
   requested_model: string | null;
-  status: "pending" | "running" | "completed" | "retryable_failure" | "permanent_failure" | "blocked";
+  status: "pending" | "running" | "completed" | "retryable_failure" | "permanent_failure" | "blocked" | "operator_canceled";
   max_attempts: number;
   attempt_count: number;
   available_at: string;
@@ -362,12 +379,6 @@ type TaskRecord = {
   updated_at: string;
   started_at: string | null;
   finished_at: string | null;
-  lease: {
-    runner_id: string | null;
-    attempt_id: string | null;
-    heartbeat_at: string | null;
-    lease_expires_at: string | null;
-  };
   outcome: TaskOutcome | null;
   last_error: string | null;
 };
@@ -375,10 +386,9 @@ type TaskRecord = {
 
 This is the main upgrade over the current proof:
 
-- add `attempt_id`
-- add `runner_id`
-- add `heartbeat_at`
-- add `lease_expires_at`
+- add `requested_model`
+- keep execution provenance in `TaskAttempt` rows rather than embedding lease state in the task row under the single-runner contract
+- defer lease/heartbeat fields until the concurrent-runner proposal lands
 
 ## 8. Task Attempt
 
@@ -415,8 +425,8 @@ This is the canonical post-normalization result.
 
 ```ts
 type TaskOutcome = {
-  status: "completed" | "retryable_failure" | "permanent_failure" | "blocked";
-  machine_status: "ok" | "needs_retry" | "blocked" | "failed";
+  status: "completed" | "retryable_failure" | "permanent_failure" | "blocked" | "operator_canceled";
+  machine_status: "ok" | "needs_retry" | "blocked" | "failed" | "canceled";
   operator_summary: string;
   raw_output?: string;
   file_changes?: string[];
@@ -430,8 +440,10 @@ type TaskOutcome = {
 Invariants:
 
 - `completed` requires `machine_status === "ok"`.
+- `operator_canceled` is emitted by runtime operator controls, not by agent model output.
 - `artifact_paths` must resolve on disk if artifacts were declared.
-- `follow_up_tasks` and `external_messages` are not just stored; they must be applied by runtime handlers after verification.
+- Until the resilience/outbox proposal lands, `follow_up_tasks` and `external_messages` may be recorded but MUST NOT be treated as delivered side effects.
+- Once runtime handlers exist, `follow_up_tasks` and `external_messages` must be applied only after verification and through those handlers.
 
 ## 10. Workflow Definition
 
@@ -532,16 +544,19 @@ This is the contract that should replace:
 ```ts
 type RuntimeEvent =
   | "task_enqueued"
-  | "task_started"
-  | "task_heartbeat"
+  | "task_claimed"
+  | "bundle_compiled"
   | "task_retry_scheduled"
+  | "task_attempt_finished"
+  | "task_started"
   | "task_finished"
   | "workflow_transitioned"
   | "workflow_completed"
   | "workflow_task_created"
   | "dispatch_idle"
   | "dispatch_locked"
-  | "stale_task_reclaimed";
+  | "boot_sweep_reclaimed"
+  | "dispatch_lock_stale_cleared";
 ```
 
 ## Old Runtime Mapping

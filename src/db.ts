@@ -1,8 +1,107 @@
 import { Database } from "bun:sqlite";
-import type { CanonicalOutcome, RunEventRecord, RuntimeConfig, TaskInput, TaskRecord, Workflow } from "./types";
+import type {
+  AttemptExitStatus,
+  AttemptRetryClass,
+  BundleArtifactRecord,
+  CanonicalOutcome,
+  ClaimedTaskRecord,
+  RunEventRecord,
+  RuntimeConfig,
+  TaskAttemptRecord,
+  TaskInput,
+  TaskRecord,
+  Workflow
+} from "./types";
 
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+function withImmediateTransaction<T>(db: Database, fn: () => T): T {
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const result = fn();
+    db.exec("COMMIT");
+    return result;
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+}
+
+function createDiagnosticsJson(detail: Record<string, unknown> | null | undefined): string | null {
+  return detail ? JSON.stringify(detail) : null;
+}
+
+function createBundleIndexes(db: Database): void {
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_bundles_task_id_created_at
+      ON bundles (task_id, created_at DESC);
+
+    CREATE INDEX IF NOT EXISTS idx_bundles_attempt_id
+      ON bundles (attempt_id);
+
+    CREATE INDEX IF NOT EXISTS idx_bundles_bundle_hash
+      ON bundles (bundle_hash);
+  `);
+}
+
+function createRunEventIndexes(db: Database): void {
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_run_events_task_attempt
+      ON run_events (task_id, attempt_id, id);
+  `);
+}
+
+function indexIncludesColumn(db: Database, indexName: string, columnName: string): boolean {
+  const escapedIndexName = indexName.replace(/'/g, "''");
+  const rows = db.query(`PRAGMA index_info('${escapedIndexName}')`).all() as Array<{ name: string }>;
+  return rows.some((row) => row.name === columnName);
+}
+
+function migrateBundlesTableIfNeeded(db: Database): void {
+  const indexRows = db.query("PRAGMA index_list(bundles)").all() as Array<{ name: string; unique: number }>;
+  const hasUniqueBundleHashIndex = indexRows.some((row) =>
+    Number(row.unique) === 1 && indexIncludesColumn(db, String(row.name), "bundle_hash")
+  );
+
+  if (!hasUniqueBundleHashIndex) {
+    return;
+  }
+
+  withImmediateTransaction(db, () => {
+    db.exec(`
+      CREATE TABLE bundles__migration (
+        bundle_id TEXT PRIMARY KEY,
+        task_id TEXT NOT NULL,
+        attempt_id TEXT NOT NULL,
+        bundle_hash TEXT NOT NULL,
+        agent_id TEXT,
+        profile_id TEXT NOT NULL,
+        adapter_id TEXT NOT NULL,
+        model TEXT,
+        variant_id TEXT,
+        evaluator_version TEXT,
+        replay_grade TEXT NOT NULL CHECK (replay_grade IN ('inputs_frozen', 'best_effort', 'non_replayable_model')),
+        relative_path TEXT NOT NULL,
+        prompt_relative_path TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (attempt_id) REFERENCES task_attempts(attempt_id)
+      );
+
+      INSERT INTO bundles__migration (
+        bundle_id, task_id, attempt_id, bundle_hash, agent_id, profile_id, adapter_id, model,
+        variant_id, evaluator_version, replay_grade, relative_path, prompt_relative_path, created_at
+      )
+      SELECT
+        bundle_id, task_id, attempt_id, bundle_hash, agent_id, profile_id, adapter_id, model,
+        variant_id, evaluator_version, replay_grade, relative_path, prompt_relative_path, created_at
+      FROM bundles;
+
+      DROP TABLE bundles;
+      ALTER TABLE bundles__migration RENAME TO bundles;
+    `);
+  });
 }
 
 export function openDb(config: RuntimeConfig): Database {
@@ -36,8 +135,47 @@ export function openDb(config: RuntimeConfig): Database {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       event_type TEXT NOT NULL,
       task_id TEXT,
+      attempt_id TEXT,
       detail_json TEXT NOT NULL,
       created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS task_attempts (
+      attempt_id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL,
+      adapter_id TEXT NOT NULL,
+      adapter_kind TEXT NOT NULL,
+      model TEXT,
+      runner_id TEXT NOT NULL,
+      bundle_id TEXT,
+      status TEXT NOT NULL CHECK (status IN ('running', 'finished')),
+      started_at TEXT NOT NULL,
+      ended_at TEXT,
+      exit_status TEXT,
+      retry_class TEXT,
+      prompt_path TEXT,
+      stdout_path TEXT,
+      stderr_path TEXT,
+      result_path TEXT,
+      diagnostics_json TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS bundles (
+      bundle_id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL,
+      attempt_id TEXT NOT NULL,
+      bundle_hash TEXT NOT NULL,
+      agent_id TEXT,
+      profile_id TEXT NOT NULL,
+      adapter_id TEXT NOT NULL,
+      model TEXT,
+      variant_id TEXT,
+      evaluator_version TEXT,
+      replay_grade TEXT NOT NULL CHECK (replay_grade IN ('inputs_frozen', 'best_effort', 'non_replayable_model')),
+      relative_path TEXT NOT NULL,
+      prompt_relative_path TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (attempt_id) REFERENCES task_attempts(attempt_id)
     );
 
     CREATE TABLE IF NOT EXISTS workflows (
@@ -50,6 +188,16 @@ export function openDb(config: RuntimeConfig): Database {
       updated_at TEXT NOT NULL,
       completed_at TEXT
     );
+
+    CREATE INDEX IF NOT EXISTS idx_tasks_claim_queue
+      ON tasks (status, available_at, priority DESC, created_at ASC);
+
+    CREATE INDEX IF NOT EXISTS idx_task_attempts_task_id_started_at
+      ON task_attempts (task_id, started_at DESC);
+
+    CREATE INDEX IF NOT EXISTS idx_task_attempts_runner_id_status
+      ON task_attempts (runner_id, status);
+
   `);
 
   const taskColumns = db.query("PRAGMA table_info(tasks)").all() as Array<{ name: string }>;
@@ -60,6 +208,16 @@ export function openDb(config: RuntimeConfig): Database {
   if (!taskColumnNames.has("description")) {
     db.exec("ALTER TABLE tasks ADD COLUMN description TEXT");
   }
+
+  const runEventColumns = db.query("PRAGMA table_info(run_events)").all() as Array<{ name: string }>;
+  const runEventColumnNames = new Set(runEventColumns.map((column) => column.name));
+  if (!runEventColumnNames.has("attempt_id")) {
+    db.exec("ALTER TABLE run_events ADD COLUMN attempt_id TEXT");
+  }
+
+  migrateBundlesTableIfNeeded(db);
+  createBundleIndexes(db);
+  createRunEventIndexes(db);
 
   return db;
 }
@@ -85,6 +243,47 @@ function rowToTask(row: Record<string, unknown>): TaskRecord {
     finished_at: row.finished_at ? String(row.finished_at) : null,
     outcome: row.outcome_json ? (JSON.parse(String(row.outcome_json)) as CanonicalOutcome) : null,
     last_error: row.last_error ? String(row.last_error) : null
+  };
+}
+
+function rowToTaskAttempt(row: Record<string, unknown>): TaskAttemptRecord {
+  return {
+    attempt_id: String(row.attempt_id),
+    task_id: String(row.task_id),
+    adapter_id: String(row.adapter_id),
+    adapter_kind: String(row.adapter_kind),
+    model: row.model ? String(row.model) : null,
+    runner_id: String(row.runner_id),
+    bundle_id: row.bundle_id ? String(row.bundle_id) : null,
+    status: String(row.status) as TaskAttemptRecord["status"],
+    started_at: String(row.started_at),
+    ended_at: row.ended_at ? String(row.ended_at) : null,
+    exit_status: row.exit_status ? (String(row.exit_status) as AttemptExitStatus) : null,
+    retry_class: row.retry_class ? (String(row.retry_class) as AttemptRetryClass) : null,
+    prompt_path: row.prompt_path ? String(row.prompt_path) : null,
+    stdout_path: row.stdout_path ? String(row.stdout_path) : null,
+    stderr_path: row.stderr_path ? String(row.stderr_path) : null,
+    result_path: row.result_path ? String(row.result_path) : null,
+    diagnostics: row.diagnostics_json ? (JSON.parse(String(row.diagnostics_json)) as Record<string, unknown>) : null
+  };
+}
+
+function rowToBundle(row: Record<string, unknown>): BundleArtifactRecord {
+  return {
+    bundle_id: String(row.bundle_id),
+    task_id: String(row.task_id),
+    attempt_id: String(row.attempt_id),
+    bundle_hash: String(row.bundle_hash),
+    agent_id: row.agent_id ? String(row.agent_id) : null,
+    profile_id: String(row.profile_id),
+    adapter_id: String(row.adapter_id),
+    model: row.model ? String(row.model) : null,
+    variant_id: row.variant_id ? String(row.variant_id) : null,
+    evaluator_version: row.evaluator_version ? String(row.evaluator_version) : null,
+    replay_grade: String(row.replay_grade) as BundleArtifactRecord["replay_grade"],
+    relative_path: String(row.relative_path),
+    prompt_relative_path: String(row.prompt_relative_path),
+    created_at: String(row.created_at)
   };
 }
 
@@ -158,71 +357,489 @@ export function taskExistsForSource(db: Database, source: string): boolean {
   return row !== null;
 }
 
-export function pickNextTask(db: Database): TaskRecord | null {
-  const row = db.query(`
-    SELECT * FROM tasks
-    WHERE status IN ('pending', 'retryable_failure')
-      AND datetime(available_at) <= datetime('now')
-      AND attempt_count < max_attempts
-    ORDER BY priority DESC, datetime(created_at) ASC
-    LIMIT 1
-  `).get() as Record<string, unknown> | null;
+export function cancelTaskByOperator(
+  db: Database,
+  taskId: string,
+  reason?: string | null
+): TaskRecord {
+  const timestamp = nowIso();
+  return withImmediateTransaction(db, () => {
+    const task = getTaskById(db, taskId);
+    if (!task) {
+      throw new Error(`task not found: ${taskId}`);
+    }
+    if (task.status === "running") {
+      throw new Error("running task cancellation is not supported");
+    }
+    if (["completed", "permanent_failure", "operator_canceled"].includes(task.status)) {
+      throw new Error(`task is already terminal: ${task.status}`);
+    }
 
+    const outcome: CanonicalOutcome = {
+      status: "operator_canceled",
+      operator_summary: reason?.trim() ? `Operator canceled: ${reason.trim()}` : "Operator canceled task.",
+      machine_status: "canceled"
+    };
+
+    db.query(`
+      UPDATE tasks
+      SET status = 'operator_canceled',
+          updated_at = ?,
+          finished_at = ?,
+          outcome_json = ?,
+          last_error = NULL
+      WHERE task_id = ?
+    `).run(timestamp, timestamp, JSON.stringify(outcome), taskId);
+
+    recordEvent(db, "task_operator_canceled", taskId, {
+      reason: reason?.trim() || null,
+      previous_status: task.status
+    });
+
+    const updated = getTaskById(db, taskId);
+    if (!updated) {
+      throw new Error(`canceled task disappeared: ${taskId}`);
+    }
+    return updated;
+  });
+}
+
+export function getTaskById(db: Database, taskId: string): TaskRecord | null {
+  const row = db.query(`
+    SELECT *
+    FROM tasks
+    WHERE task_id = ?
+    LIMIT 1
+  `).get(taskId) as Record<string, unknown> | null;
   return row ? rowToTask(row) : null;
 }
 
-export function markRunning(db: Database, taskId: string): void {
-  const timestamp = nowIso();
-  db.query(`
-    UPDATE tasks
-    SET status = 'running',
-        updated_at = ?,
-        started_at = ?,
-        attempt_count = attempt_count + 1
+export function getTaskAttemptById(db: Database, attemptId: string): TaskAttemptRecord | null {
+  const row = db.query(`
+    SELECT *
+    FROM task_attempts
+    WHERE attempt_id = ?
+    LIMIT 1
+  `).get(attemptId) as Record<string, unknown> | null;
+  return row ? rowToTaskAttempt(row) : null;
+}
+
+export function getTaskAttemptsForTask(db: Database, taskId: string): TaskAttemptRecord[] {
+  const rows = db.query(`
+    SELECT *
+    FROM task_attempts
     WHERE task_id = ?
-  `).run(timestamp, timestamp, taskId);
-  recordEvent(db, "task_started", taskId, {});
+    ORDER BY datetime(started_at) ASC, attempt_id ASC
+  `).all(taskId) as Array<Record<string, unknown>>;
+  return rows.map(rowToTaskAttempt);
+}
+
+export function getBundleByAttemptId(db: Database, attemptId: string): BundleArtifactRecord | null {
+  const row = db.query(`
+    SELECT *
+    FROM bundles
+    WHERE attempt_id = ?
+    LIMIT 1
+  `).get(attemptId) as Record<string, unknown> | null;
+  return row ? rowToBundle(row) : null;
+}
+
+export function claimNextTask(db: Database, runnerId: string): ClaimedTaskRecord | null {
+  const timestamp = nowIso();
+  return withImmediateTransaction(db, () => {
+    const row = db.query(`
+      SELECT *
+      FROM tasks
+      WHERE status IN ('pending', 'retryable_failure')
+        AND datetime(available_at) <= datetime('now')
+        AND attempt_count < max_attempts
+      ORDER BY priority DESC, datetime(created_at) ASC
+      LIMIT 1
+    `).get() as Record<string, unknown> | null;
+
+    if (!row) {
+      return null;
+    }
+
+    const task = rowToTask(row);
+    const attemptId = crypto.randomUUID();
+    const placeholderAdapterId = task.requested_adapter || "pending-resolution";
+    const attempt: TaskAttemptRecord = {
+      attempt_id: attemptId,
+      task_id: task.task_id,
+      adapter_id: placeholderAdapterId,
+      adapter_kind: "unresolved",
+      model: null,
+      runner_id: runnerId,
+      bundle_id: null,
+      status: "running",
+      started_at: timestamp,
+      ended_at: null,
+      exit_status: null,
+      retry_class: null,
+      prompt_path: null,
+      stdout_path: null,
+      stderr_path: null,
+      result_path: null,
+      diagnostics: null
+    };
+
+    db.query(`
+      UPDATE tasks
+      SET status = 'running',
+          updated_at = ?,
+          started_at = ?,
+          attempt_count = attempt_count + 1
+      WHERE task_id = ?
+    `).run(timestamp, timestamp, task.task_id);
+
+    db.query(`
+      INSERT INTO task_attempts (
+        attempt_id, task_id, adapter_id, adapter_kind, model, runner_id, bundle_id, status,
+        started_at, ended_at, exit_status, retry_class, prompt_path, stdout_path, stderr_path, result_path, diagnostics_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      attempt.attempt_id,
+      attempt.task_id,
+      attempt.adapter_id,
+      attempt.adapter_kind,
+      attempt.model,
+      attempt.runner_id,
+      attempt.bundle_id,
+      attempt.status,
+      attempt.started_at,
+      attempt.ended_at,
+      attempt.exit_status,
+      attempt.retry_class,
+      attempt.prompt_path,
+      attempt.stdout_path,
+      attempt.stderr_path,
+      attempt.result_path,
+      createDiagnosticsJson(attempt.diagnostics)
+    );
+
+    recordEvent(db, "task_claimed", task.task_id, { runner_id: runnerId }, attemptId);
+    const claimedTask = getTaskById(db, task.task_id);
+    if (!claimedTask) {
+      throw new Error(`Claimed task disappeared: ${task.task_id}`);
+    }
+    return { task: claimedTask, attempt };
+  });
+}
+
+export function updateAttemptAdapter(
+  db: Database,
+  attemptId: string,
+  adapter: { adapterId: string; adapterKind: string; model?: string | null }
+): void {
+  db.query(`
+    UPDATE task_attempts
+    SET adapter_id = ?,
+        adapter_kind = ?,
+        model = ?
+    WHERE attempt_id = ?
+  `).run(adapter.adapterId, adapter.adapterKind, adapter.model ?? null, attemptId);
+}
+
+export function insertBundle(
+  db: Database,
+  bundle: BundleArtifactRecord,
+  options: { attemptPromptPath: string; runnerId: string }
+): void {
+  withImmediateTransaction(db, () => {
+    db.query(`
+      INSERT INTO bundles (
+        bundle_id, task_id, attempt_id, bundle_hash, agent_id, profile_id, adapter_id, model,
+        variant_id, evaluator_version, replay_grade, relative_path, prompt_relative_path, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      bundle.bundle_id,
+      bundle.task_id,
+      bundle.attempt_id,
+      bundle.bundle_hash,
+      bundle.agent_id,
+      bundle.profile_id,
+      bundle.adapter_id,
+      bundle.model,
+      bundle.variant_id,
+      bundle.evaluator_version,
+      bundle.replay_grade,
+      bundle.relative_path,
+      bundle.prompt_relative_path,
+      bundle.created_at
+    );
+
+    db.query(`
+      UPDATE task_attempts
+      SET bundle_id = ?,
+          prompt_path = ?
+      WHERE attempt_id = ?
+    `).run(bundle.bundle_id, options.attemptPromptPath, bundle.attempt_id);
+
+    recordEvent(
+      db,
+      "bundle_compiled",
+      bundle.task_id,
+      {
+        runner_id: options.runnerId,
+        bundle_id: bundle.bundle_id,
+        bundle_hash: bundle.bundle_hash,
+        replay_grade: bundle.replay_grade
+      },
+      bundle.attempt_id
+    );
+  });
+}
+
+type AttemptFinishPaths = {
+  promptPath?: string | null;
+  stdoutPath?: string | null;
+  stderrPath?: string | null;
+  resultPath?: string | null;
+};
+
+type AttemptFinishInput = {
+  taskId: string;
+  attemptId: string | null;
+  runnerId?: string | null;
+  outcome: CanonicalOutcome;
+  lastError?: string | null;
+  exitStatus: AttemptExitStatus;
+  retryClass?: AttemptRetryClass | null;
+  diagnostics?: Record<string, unknown> | null;
+} & AttemptFinishPaths;
+
+export function finalizeTaskAttempt(db: Database, input: AttemptFinishInput): void {
+  const timestamp = nowIso();
+  const storedOutcome = input.attemptId
+    ? {
+        ...input.outcome,
+        attempt_id: input.attemptId,
+        bundle_id: input.outcome.bundle_id,
+        bundle_hash: input.outcome.bundle_hash
+      }
+    : input.outcome;
+
+  withImmediateTransaction(db, () => {
+    if (input.attemptId) {
+      db.query(`
+        UPDATE task_attempts
+        SET status = 'finished',
+            ended_at = ?,
+            exit_status = ?,
+            retry_class = ?,
+            prompt_path = COALESCE(?, prompt_path),
+            stdout_path = ?,
+            stderr_path = ?,
+            result_path = ?,
+            diagnostics_json = ?
+        WHERE attempt_id = ?
+      `).run(
+        timestamp,
+        input.exitStatus,
+        input.retryClass ?? "none",
+        input.promptPath ?? null,
+        input.stdoutPath ?? null,
+        input.stderrPath ?? null,
+        input.resultPath ?? null,
+        createDiagnosticsJson(input.diagnostics),
+        input.attemptId
+      );
+
+      recordEvent(
+        db,
+        "task_attempt_finished",
+        input.taskId,
+        {
+          runner_id: input.runnerId ?? null,
+          exit_status: input.exitStatus,
+          retry_class: input.retryClass ?? "none"
+        },
+        input.attemptId
+      );
+    }
+
+    db.query(`
+      UPDATE tasks
+      SET status = ?,
+          updated_at = ?,
+          finished_at = ?,
+          outcome_json = ?,
+          last_error = ?
+      WHERE task_id = ?
+    `).run(
+      storedOutcome.status,
+      timestamp,
+      timestamp,
+      JSON.stringify(storedOutcome),
+      input.lastError ?? null,
+      input.taskId
+    );
+
+    recordEvent(
+      db,
+      "task_finished",
+      input.taskId,
+      {
+        runner_id: input.runnerId ?? null,
+        status: storedOutcome.status,
+        machine_status: storedOutcome.machine_status
+      },
+      input.attemptId
+    );
+  });
+}
+
+type AttemptRetryInput = {
+  taskId: string;
+  attemptId: string | null;
+  runnerId?: string | null;
+  errorMessage: string;
+  exitStatus: AttemptExitStatus;
+  retryClass?: AttemptRetryClass | null;
+  diagnostics?: Record<string, unknown> | null;
+} & AttemptFinishPaths;
+
+export function rescheduleTaskAttempt(db: Database, config: RuntimeConfig, input: AttemptRetryInput): string {
+  const timestamp = nowIso();
+  const availableAt = new Date(Date.now() + config.retryBackoffSeconds * 1000).toISOString();
+
+  withImmediateTransaction(db, () => {
+    if (input.attemptId) {
+      db.query(`
+        UPDATE task_attempts
+        SET status = 'finished',
+            ended_at = ?,
+            exit_status = ?,
+            retry_class = ?,
+            prompt_path = COALESCE(?, prompt_path),
+            stdout_path = ?,
+            stderr_path = ?,
+            result_path = ?,
+            diagnostics_json = ?
+        WHERE attempt_id = ?
+      `).run(
+        timestamp,
+        input.exitStatus,
+        input.retryClass ?? "retryable",
+        input.promptPath ?? null,
+        input.stdoutPath ?? null,
+        input.stderrPath ?? null,
+        input.resultPath ?? null,
+        createDiagnosticsJson(input.diagnostics),
+        input.attemptId
+      );
+
+      recordEvent(
+        db,
+        "task_attempt_finished",
+        input.taskId,
+        {
+          runner_id: input.runnerId ?? null,
+          exit_status: input.exitStatus,
+          retry_class: input.retryClass ?? "retryable"
+        },
+        input.attemptId
+      );
+    }
+
+    db.query(`
+      UPDATE tasks
+      SET status = 'retryable_failure',
+          updated_at = ?,
+          available_at = ?,
+          finished_at = NULL,
+          outcome_json = NULL,
+          last_error = ?
+      WHERE task_id = ?
+    `).run(timestamp, availableAt, input.errorMessage, input.taskId);
+
+    recordEvent(
+      db,
+      "task_retry_scheduled",
+      input.taskId,
+      {
+        runner_id: input.runnerId ?? null,
+        available_at: availableAt,
+        error: input.errorMessage
+      },
+      input.attemptId
+    );
+  });
+
+  return availableAt;
+}
+
+export function reclaimRunningWorkOnBoot(db: Database, runnerId: string): { tasksReclaimed: number; attemptsReclaimed: number } {
+  const timestamp = nowIso();
+  return withImmediateTransaction(db, () => {
+    const reclaimedTasks = db.query(`
+      UPDATE tasks
+      SET status = 'retryable_failure',
+          updated_at = ?,
+          available_at = ?,
+          finished_at = NULL,
+          outcome_json = NULL,
+          last_error = 'reclaimed on boot from prior running state'
+      WHERE status = 'running'
+    `).run(timestamp, timestamp);
+
+    const reclaimedAttempts = db.query(`
+      UPDATE task_attempts
+      SET status = 'finished',
+          ended_at = ?,
+          exit_status = 'error',
+          retry_class = 'retryable',
+          diagnostics_json = ?
+      WHERE status = 'running'
+    `).run(timestamp, JSON.stringify({ reason: "boot_sweep" }));
+
+    const tasksReclaimed = Number(reclaimedTasks.changes);
+    const attemptsReclaimed = Number(reclaimedAttempts.changes);
+    if (tasksReclaimed > 0 || attemptsReclaimed > 0) {
+      recordEvent(db, "boot_sweep_reclaimed", null, {
+        runner_id: runnerId,
+        tasks_reclaimed: tasksReclaimed,
+        attempts_reclaimed: attemptsReclaimed
+      });
+    }
+
+    return { tasksReclaimed, attemptsReclaimed };
+  });
 }
 
 export function finalizeTask(db: Database, taskId: string, outcome: CanonicalOutcome, lastError?: string): void {
-  const timestamp = nowIso();
-  db.query(`
-    UPDATE tasks
-    SET status = ?,
-        updated_at = ?,
-        finished_at = ?,
-        outcome_json = ?,
-        last_error = ?
-    WHERE task_id = ?
-  `).run(
-    outcome.status,
-    timestamp,
-    timestamp,
-    JSON.stringify(outcome),
-    lastError ?? null,
-    taskId
-  );
-  recordEvent(db, "task_finished", taskId, { status: outcome.status, machine_status: outcome.machine_status });
+  finalizeTaskAttempt(db, {
+    taskId,
+    attemptId: null,
+    outcome,
+    lastError: lastError ?? null,
+    exitStatus: outcome.machine_status === "ok" ? "ok" : "error",
+    retryClass: "none"
+  });
 }
 
 export function rescheduleTask(db: Database, config: RuntimeConfig, taskId: string, errorMessage: string): void {
-  const availableAt = new Date(Date.now() + config.retryBackoffSeconds * 1000).toISOString();
-  db.query(`
-    UPDATE tasks
-    SET status = 'retryable_failure',
-        updated_at = ?,
-        available_at = ?,
-        last_error = ?
-    WHERE task_id = ?
-  `).run(nowIso(), availableAt, errorMessage, taskId);
-  recordEvent(db, "task_retry_scheduled", taskId, { available_at: availableAt, error: errorMessage });
+  rescheduleTaskAttempt(db, config, {
+    taskId,
+    attemptId: null,
+    errorMessage,
+    exitStatus: "error",
+    retryClass: "retryable"
+  });
 }
 
-export function recordEvent(db: Database, eventType: string, taskId: string | null, detail: Record<string, unknown>): void {
+export function recordEvent(
+  db: Database,
+  eventType: string,
+  taskId: string | null,
+  detail: Record<string, unknown>,
+  attemptId: string | null = null
+): void {
   db.query(`
-    INSERT INTO run_events (event_type, task_id, detail_json, created_at)
-    VALUES (?, ?, ?, ?)
-  `).run(eventType, taskId, JSON.stringify(detail), nowIso());
+    INSERT INTO run_events (event_type, task_id, attempt_id, detail_json, created_at)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(eventType, taskId, attemptId, JSON.stringify(detail), nowIso());
 }
 
 export function getStatusSummary(db: Database): Record<string, unknown> {
@@ -233,14 +850,32 @@ export function getStatusSummary(db: Database): Record<string, unknown> {
   `).all() as Array<Record<string, unknown>>;
 
   const recent = db.query(`
-    SELECT task_id, kind, status, updated_at
-    FROM tasks
-    ORDER BY datetime(updated_at) DESC
+    SELECT
+      t.task_id,
+      t.kind,
+      t.status,
+      t.updated_at,
+      (
+        SELECT ta.attempt_id
+        FROM task_attempts ta
+        WHERE ta.task_id = t.task_id
+        ORDER BY datetime(ta.started_at) DESC, ta.attempt_id DESC
+        LIMIT 1
+      ) AS attempt_id,
+      (
+        SELECT b.bundle_hash
+        FROM bundles b
+        WHERE b.task_id = t.task_id
+        ORDER BY datetime(b.created_at) DESC, b.bundle_id DESC
+        LIMIT 1
+      ) AS bundle_hash
+    FROM tasks t
+    ORDER BY datetime(t.updated_at) DESC
     LIMIT 5
   `).all() as Array<Record<string, unknown>>;
 
   const lastEvent = db.query(`
-    SELECT event_type, task_id, created_at
+    SELECT event_type, task_id, attempt_id, created_at
     FROM run_events
     ORDER BY id DESC
     LIMIT 1
@@ -258,6 +893,7 @@ function rowToRunEvent(row: Record<string, unknown>): RunEventRecord {
     id: Number(row.id),
     event_type: String(row.event_type),
     task_id: row.task_id ? String(row.task_id) : null,
+    attempt_id: row.attempt_id ? String(row.attempt_id) : null,
     detail: JSON.parse(String(row.detail_json)),
     created_at: String(row.created_at)
   };
@@ -271,7 +907,8 @@ export function getRecentTasks(
   const safeLimit = Math.max(1, Math.min(limit, 200));
   if (!statuses || statuses.length === 0) {
     const rows = db.query(`
-      SELECT * FROM tasks
+      SELECT *
+      FROM tasks
       ORDER BY datetime(updated_at) DESC, rowid DESC
       LIMIT ?
     `).all(safeLimit) as Array<Record<string, unknown>>;
@@ -280,7 +917,8 @@ export function getRecentTasks(
 
   const placeholders = statuses.map(() => "?").join(", ");
   const rows = db.query(`
-    SELECT * FROM tasks
+    SELECT *
+    FROM tasks
     WHERE status IN (${placeholders})
     ORDER BY datetime(updated_at) DESC, rowid DESC
     LIMIT ?
@@ -301,7 +939,8 @@ export function getTaskCountsByStatus(db: Database): Record<string, number> {
     completed: 0,
     blocked: 0,
     retryable_failure: 0,
-    permanent_failure: 0
+    permanent_failure: 0,
+    operator_canceled: 0
   };
 
   for (const row of rows) {

@@ -80,11 +80,9 @@ function normalizeFollowUpTasks(value: unknown): TaskInput[] {
 
 function extractJsonObject(rawOutput: string): string {
   const trimmed = rawOutput.trim();
-  if (trimmed.startsWith("```")) {
-    const fencedMatch = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
-    if (fencedMatch?.[1]) {
-      return fencedMatch[1].trim();
-    }
+  const fencedMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (fencedMatch?.[1]) {
+    return fencedMatch[1].trim();
   }
   return trimmed;
 }
@@ -499,8 +497,14 @@ export async function validateRuntimeConfig(config: RuntimeConfig): Promise<stri
       if (adapter.timeoutMs < 1000) {
         issues.push(`adapter timeout too low for ${adapterId}`);
       }
-      if (adapter.driver === "codex" && !(adapter.model || adapter.env?.CODEX_MODEL)) {
+      if (adapter.settingsFile && !existsSync(adapter.settingsFile)) {
+        issues.push(`adapter settingsFile missing for ${adapterId}: ${adapter.settingsFile}`);
+      }
+      if (adapter.driver === "codex" && adapter.providerBaseUrl && !(adapter.model || adapter.env?.CODEX_MODEL)) {
         issues.push(`codex adapter model missing for ${adapterId}`);
+      }
+      if (adapter.driver === "claude-code" && adapter.autonomy === "trusted-vm" && !adapter.settingsFile) {
+        issues.push(`claude-code trusted-vm adapter missing settingsFile for ${adapterId}`);
       }
       continue;
     }

@@ -1,0 +1,44 @@
+{
+  "workflows": [
+    {
+      "template": "goal-loop",
+      "instance_key": "lumen-aibtc-context-authority-stage-1",
+      "context": {
+        "summary": "Lumen AIBTC context authority stage 1",
+        "objective": "Plan, implement, and verify the narrowest read-only runtime changes needed to make Lumen produce managed AIBTC repo context artifacts on the live loop without external writes.",
+        "scope": [
+          "agent-runtime/proposals/0006-lumen-context-authority.md",
+          "agent-runtime/deploy/lumen/CONTEXT_AUTHORITY.md",
+          "agent-runtime/backlog/lumen-context-authority.json",
+          "agent-runtime/profiles/lumen/profile.json",
+          "agent-runtime/deploy/lumen/runtime.lumen.json",
+          "agent-runtime/src/context.ts",
+          "agent-runtime/src/artifacts.ts",
+          "agent-runtime/src/workflows.ts",
+          "agent-runtime/src/validation.ts",
+          "agent-runtime/src/web.ts"
+        ],
+        "requested_profile": "proving-codex",
+        "plan_phase_skills": [
+          "planning",
+          "artifact-reporting"
+        ],
+        "verify_plan_phase_skills": [
+          "review",
+          "planning",
+          "artifact-reporting"
+        ],
+        "execute_phase_skills": [
+          "repo-edit",
+          "verification",
+          "artifact-reporting"
+        ],
+        "verify_execute_phase_skills": [
+          "review",
+          "verification",
+          "artifact-reporting"
+        ]
+      }
+    }
+  ]
+}

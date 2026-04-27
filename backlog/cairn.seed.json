@@ -1,0 +1,93 @@
+{
+  "tasks": [
+    {
+      "kind": "adapter-proof",
+      "source": "operator:cairn-seed:codex-proof",
+      "subject": "Canonical Cairn Codex proof",
+      "description": "Create /tmp/cairn-codex-proof/proof.txt with content ok, verify it on disk, and return completed JSON with the absolute path in file_changes.",
+      "priority": 9,
+      "requested_profile": "cairn",
+      "requested_adapter": "codex-ollama",
+      "max_attempts": 1,
+      "payload": {
+        "goal": "Prove the Cairn package can execute a canonical trusted-VM task on its default adapter.",
+        "proof_path": "/tmp/cairn-codex-proof/proof.txt",
+        "proof_contents": "ok",
+        "return_requirements": [
+          "status=completed",
+          "machine_status=ok",
+          "file_changes=[\"/tmp/cairn-codex-proof/proof.txt\"]",
+          "artifact_paths=[]",
+          "follow_up_tasks=[]",
+          "external_messages=[]"
+        ]
+      }
+    },
+    {
+      "kind": "campaign-bootstrap",
+      "source": "operator:cairn-seed:charter",
+      "subject": "Create the Cairn clone-readiness charter",
+      "description": "Define Cairn's mission, boundaries, evidence model, and promotion gates as the first sibling agent beside Lumen.",
+      "priority": 7,
+      "requested_profile": "cairn",
+      "payload": {
+        "mission": "Operate Cairn as the runtime parity and clone-readiness agent for sibling VM rollout.",
+        "phase": "charter",
+        "scope": [
+          "adapter parity",
+          "host bootstrap",
+          "clone package reproducibility",
+          "promotion gates"
+        ],
+        "allowed_write_scope": [
+          "state/artifacts/campaigns/",
+          "state/artifacts/plans/",
+          "state/artifacts/reports/"
+        ],
+        "required_artifacts": [
+          "campaigns/cairn/clone-readiness-charter.md"
+        ],
+        "acceptance_criteria": [
+          "Defines Cairn's boundaries and intended role",
+          "Defines evidence required before promoting a sibling VM",
+          "Defines adapter parity checks Cairn is responsible for",
+          "Defines when clone-readiness work should escalate to the operator"
+        ],
+        "operator_goal": "Create the governing charter for Cairn's first proving phase."
+      }
+    },
+    {
+      "kind": "campaign-observe",
+      "source": "operator:cairn-seed:parity-baseline",
+      "subject": "Produce the first runtime parity baseline for sibling agents",
+      "description": "Map what is currently shared versus agent-specific across the proving runtime and identify the minimum contracts required before Arc, Lumen, Forge, and Cairn can move in tighter lock-step.",
+      "priority": 6,
+      "requested_profile": "cairn",
+      "payload": {
+        "mission": "Create the initial parity baseline for multi-agent runtime rollout.",
+        "phase": "observe-and-propose",
+        "scope": [
+          "shared runtime code",
+          "adapter contracts",
+          "agent package shape",
+          "host override handling",
+          "migration gates"
+        ],
+        "allowed_write_scope": [
+          "state/artifacts/reports/",
+          "state/artifacts/specs/"
+        ],
+        "required_artifacts": [
+          "reports/cairn/runtime-parity-baseline.md"
+        ],
+        "acceptance_criteria": [
+          "Separates shared and agent-specific contracts",
+          "Identifies current divergence risks",
+          "Lists the next bounded parity tasks",
+          "Gives the operator a concrete promotion checklist"
+        ],
+        "operator_goal": "Produce the first parity baseline for the sibling-agent rollout."
+      }
+    }
+  ]
+}

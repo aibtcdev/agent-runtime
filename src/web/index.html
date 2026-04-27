@@ -2,153 +2,93 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#0a0f14">
   <title>Lumen Operator</title>
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-  <header class="topbar">
-    <div>
-      <p class="eyebrow">Agent Runtime Operator View</p>
-      <h1 id="runtime-name">Lumen runtime</h1>
-    </div>
-    <div class="topbar-meta">
-      <span class="badge" id="runtime-state">idle</span>
-      <span class="muted" id="last-event">No events yet</span>
-    </div>
-  </header>
+  <div id="heartbeat" class="heartbeat">
+    <span id="runtime-state" class="heartbeat-state">idle</span>
+    <span id="counts" class="heartbeat-counts">
+      <span class="count-group"><span class="count-num" id="count-running">0</span> running</span>
+      <span class="count-group"><span class="count-num" id="count-queued">0</span> queued</span>
+      <span class="count-group" id="blocked-group"><span class="count-num" id="count-blocked">0</span> blocked</span>
+      <span class="count-group"><span class="count-num" id="count-retryable">0</span> retry</span>
+      <span class="count-group"><span class="count-num" id="count-canceled">0</span> canceled</span>
+    </span>
+    <span id="conn-indicator" class="conn-indicator" title="connected"></span>
+    <button id="pause-toggle" class="pause-toggle" type="button">Pause</button>
+    <span id="last-event" class="heartbeat-meta">no events</span>
+    <button id="search-toggle" class="icon-btn" aria-label="Search">&#x1F50D;</button>
+  </div>
 
-  <main class="layout">
-    <section class="panel metrics">
-      <div class="section-head">
-        <h2>Current Status</h2>
-        <span class="muted">Summary first</span>
+  <div id="search-bar" class="search-bar" hidden>
+    <input id="search-input" type="text" placeholder="Search tasks..." autocomplete="off">
+    <div class="filter-tabs" role="tablist">
+      <button class="filter-tab is-active" data-filter="all" role="tab">All</button>
+      <button class="filter-tab" data-filter="running" role="tab">Running</button>
+      <button class="filter-tab" data-filter="pending" role="tab">Queued</button>
+      <button class="filter-tab" data-filter="blocked" role="tab">Blocked</button>
+      <button class="filter-tab" data-filter="completed" role="tab">Done</button>
+    </div>
+  </div>
+
+  <main>
+    <section id="sec-now" class="section collapsible">
+      <div class="section-header" role="button" tabindex="0" aria-expanded="true">
+        <h2>now</h2>
+        <span class="section-count" id="now-count"></span>
+        <span class="chevron">&#9660;</span>
       </div>
-      <p class="hero-summary" id="hero-summary">Loading current runtime summary.</p>
-      <div class="metric-grid">
-        <article>
-          <span>Queued</span>
-          <strong id="count-queued">0</strong>
-        </article>
-        <article>
-          <span>Running</span>
-          <strong id="count-running">0</strong>
-        </article>
-        <article>
-          <span>Completed</span>
-          <strong id="count-completed">0</strong>
-        </article>
-        <article>
-          <span>Blocked</span>
-          <strong id="count-blocked">0</strong>
-        </article>
+      <div class="section-body">
+        <div id="now-tasks" class="task-list"></div>
+        <div id="now-workflows" class="workflow-list"></div>
       </div>
     </section>
 
-    <section class="panel workspace">
-      <div class="section-head">
-        <h2>Operator Workspace</h2>
-        <span class="muted" id="workspace-meta">One panel at a time</span>
+    <section id="sec-done" class="section collapsible">
+      <div class="section-header" role="button" tabindex="0" aria-expanded="true">
+        <h2>done</h2>
+        <span class="section-count" id="done-count"></span>
+        <span class="chevron">&#9660;</span>
       </div>
-      <p class="panel-summary">Switch between workflows, tasks, events, artifacts, and reports without stacking all of them on screen.</p>
-
-      <div class="tabbar" role="tablist" aria-label="Operator panels">
-        <button type="button" class="tab-button is-active" data-tab="workflows" role="tab" aria-selected="true">Workflows</button>
-        <button type="button" class="tab-button" data-tab="tasks" role="tab" aria-selected="false">Recent Tasks</button>
-        <button type="button" class="tab-button" data-tab="events" role="tab" aria-selected="false">Live Events</button>
-        <button type="button" class="tab-button" data-tab="artifacts" role="tab" aria-selected="false">Artifacts</button>
-        <button type="button" class="tab-button" data-tab="reports" role="tab" aria-selected="false">Reports</button>
+      <div class="section-body">
+        <div id="done-tasks" class="task-list"></div>
       </div>
+    </section>
 
-      <section id="tab-workflows" class="tab-panel is-active" role="tabpanel">
-        <div class="section-head">
-          <h2>Workflows</h2>
-          <span class="muted" id="workflow-count">0 total</span>
-        </div>
-        <p class="panel-summary">Active workflow states with a drill-in view for full context.</p>
-        <div id="workflow-list" class="stack"></div>
-      </section>
-
-      <section id="tab-tasks" class="tab-panel" role="tabpanel" hidden>
-        <div class="section-head">
-          <h2>Recent Tasks</h2>
-          <span class="muted">Newest first</span>
-        </div>
-        <p class="panel-summary">Short operator summaries only until you open details.</p>
-        <div class="subsection">
-          <div class="section-head">
-            <h2>Running Now</h2>
-            <span class="muted" id="running-task-count">0 active</span>
-          </div>
-          <div id="running-task-list" class="stack"></div>
-        </div>
-        <div class="subsection">
-          <div class="section-head">
-            <h2>Workflow Tasks</h2>
-            <span class="muted">Workflow-sourced work</span>
-          </div>
-          <div id="workflow-task-list" class="stack"></div>
-        </div>
-        <div class="subsection">
-          <div class="section-head">
-            <h2>Other Recent Tasks</h2>
-            <span class="muted">Non-workflow work</span>
-          </div>
-          <div id="task-list" class="stack"></div>
-        </div>
-      </section>
-
-      <section id="tab-events" class="tab-panel" role="tabpanel" hidden>
-        <div class="section-head">
-          <h2>Live Events</h2>
-          <span class="muted">SSE when available</span>
-        </div>
-        <p class="panel-summary">Only the most recent transitions and completions.</p>
-        <div id="event-list" class="stack compact"></div>
-      </section>
-
-      <section id="tab-artifacts" class="tab-panel" role="tabpanel" hidden>
-        <div class="section-head">
-          <h2>Artifacts</h2>
-          <span class="muted" id="artifact-path">state/artifacts/</span>
-        </div>
-        <p class="panel-summary">Browse paths on the left, open file contents on demand.</p>
-        <div class="split">
-          <div id="artifact-browser" class="browser"></div>
-          <pre id="artifact-content" class="artifact-view">Select an artifact to view its contents.</pre>
-        </div>
-      </section>
-
-      <section id="tab-reports" class="tab-panel" role="tabpanel" hidden>
-        <div class="section-head">
-          <h2>Snapshots And Reports</h2>
-          <span class="muted">Before/after comparison</span>
-        </div>
-        <p class="panel-summary">Choose two snapshots to load a concise diff, then inspect raw JSON if needed.</p>
-        <div class="snapshot-toolbar">
-          <label>Before
-            <select id="snapshot-before"></select>
-          </label>
-          <label>After
-            <select id="snapshot-after"></select>
-          </label>
-          <button id="load-report" type="button">Load Report</button>
-        </div>
-        <pre id="report-view" class="artifact-view">Select two snapshots to compare.</pre>
-      </section>
+    <section id="sec-events" class="section collapsible">
+      <div class="section-header" role="button" tabindex="0" aria-expanded="true">
+        <h2>events</h2>
+        <span class="section-count" id="event-velocity"></span>
+        <span class="chevron">&#9660;</span>
+      </div>
+      <div class="section-body">
+        <div id="event-list" class="event-list"></div>
+      </div>
     </section>
   </main>
 
-  <dialog id="detail-dialog" class="detail-dialog">
-    <form method="dialog" class="detail-shell">
-      <div class="section-head">
-        <h2 id="detail-title">Details</h2>
-        <button id="detail-close" class="ghost-button" type="submit">Close</button>
-      </div>
-      <p id="detail-subtitle" class="panel-summary">Expanded operator detail.</p>
-      <pre id="detail-body" class="artifact-view detail-body"></pre>
-    </form>
-  </dialog>
+  <div id="reply-bar" class="reply-bar">
+    <textarea id="reply-input" placeholder="New task..." rows="1" aria-label="New task message"></textarea>
+    <button id="reply-send" class="send-btn">&#x27A4;</button>
+    <span id="reply-status" class="reply-status" aria-live="polite"></span>
+  </div>
+
+  <div id="detail-drawer" class="detail-drawer" hidden>
+    <button id="detail-close" class="drawer-close" aria-label="Close">&#x2715;</button>
+    <div class="drawer-header">
+      <h3 id="detail-title"></h3>
+    </div>
+    <div id="detail-body" class="drawer-body"></div>
+    <div class="drawer-footer">
+      <button id="detail-cancel" class="cancel-btn">Cancel</button>
+      <button id="detail-reply" class="reply-btn">Reply</button>
+      <span id="detail-children" class="children-indicator"></span>
+    </div>
+  </div>
+  <div id="detail-backdrop" class="detail-backdrop" hidden></div>
 
   <script type="module" src="/app.js"></script>
 </body>

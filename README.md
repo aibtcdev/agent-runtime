@@ -9,7 +9,41 @@ This proof keeps the runtime intentionally small:
 - adapter-based execution
 - SQLite persistence
 - dispatch lock plus retry handling
-- CLI operator visibility
+- CLI operator controls
+- LAN web/API operator visibility
+
+Shared `agent-cli` driver support now exists for `codex`, `claude-code`, and `hermes-agent`. The current live Lumen proving config still enables only `ollama-generate` plus `codex` until the Claude and Hermes launch contracts are pinned per host.
+
+The CLI is the primary agent execution surface: dispatch cycles, health checks, workflow transitions, and bridge intake run through `src/cli.ts`. The web server is the v1 LAN coordination surface for humans and sibling agents on the same private network. It exposes runtime state, tasks, events, artifacts, snapshots, and a bounded operator task queue endpoint.
+
+## Lumen Status
+
+Lumen is now live as a proving runtime on `dev@192.168.1.16` under `deploy/lumen/runtime.lumen.json`. The real host exit condition in `deploy/lumen/DEPLOY.md` has been satisfied:
+
+- manual `github-story` bring-up passed
+- manual `discord-reply` bring-up passed
+- `agent-runtime-operator@lumen.service` is enabled and active
+- `agent-runtime-dispatch@lumen.timer` is enabled and active
+- the operator UI is reachable on `127.0.0.1:4314`
+- Hermes remains intact beside the proving runtime
+
+Current intended use is narrow and operator-facing:
+
+- GitHub merge/PR story summaries
+- Discord explanation/reply tasks
+- small proving queues observed through the UI, LAN API, systemd logs, and runtime JSONL logs
+
+For the live host, start with these paths and surfaces:
+
+- runtime config: `deploy/lumen/runtime.lumen.json`
+- host override example: `deploy/lumen/runtime.lumen.host.example.json`
+- bring-up and host evidence: `deploy/lumen/DEPLOY.md`
+- adapter contracts: `deploy/ADAPTER_CONTRACTS.md`
+- clone contract: `deploy/CLONE_CONTRACT.md`
+- agent package template: `templates/agent-package/`
+- operator UI: `http://127.0.0.1:4314/`
+- services: `agent-runtime-operator@lumen.service`, `agent-runtime-dispatch@lumen.timer`, `agent-runtime-run-once@lumen.service`
+
 
 ## Commands
 
@@ -90,21 +124,31 @@ deploy/systemd/agent-runtime-dispatch@.timer
 deploy/systemd/agent-runtime-operator@.service
 ```
 
-Run the operator dashboard:
+Use `deploy/lumen/DEPLOY.md` as the bring-up checklist. The current Lumen proving contract is intentionally narrow: GitHub-story runs are summary-only and should complete with `artifact_paths: []` unless Lumen explicitly writes managed artifacts.
+
+For host-specific adapter wiring, keep the repo-safe base config unchanged and create a local sibling override that `extends` it. `deploy/lumen/runtime.lumen.host.example.json` shows the intended pattern for Claude and Hermes on Lumen.
+
+If you deploy with `rsync --delete`, keep the real host override outside the synced repo tree, for example under `~/.config/agent-runtime/`, and use an absolute `extends` path back to the checked-in base config.
+
+Run the operator UI and LAN API:
 
 ```bash
 bun run src/web.ts --config config/runtime.json --host 127.0.0.1 --port 4314
 ```
 
-Dashboard surfaces:
+LAN API surfaces:
 
 - `/` static operator view
-- `/api/status` runtime status and last event
-- `/api/dashboard` combined operator payload
+- `/api/state` runtime state, task counts, and last event
+- `/api/heartbeat` lightweight liveness check
 - `/api/workflows`, `/api/tasks`, `/api/events`
+- `POST /api/tasks/queue` queue a bounded operator task with a JSON `message`
+- `POST /api/tasks/:task_id/cancel` cancel a non-running task as `operator_canceled`
+- `/api/pause` read or set runtime-owned dispatch pause state; paused dispatchers do not claim new work
 - `/api/artifacts`, `/api/artifact`
 - `/api/snapshots`, `/api/snapshot`, `/api/report`, `/api/report/latest`
 - `/api/stream` live SSE updates
+- `/artifacts`, `/snapshots` browser-readable JSON views for runtime inspection
 
 Queue a Lumen GitHub task through the thin bridge:
 

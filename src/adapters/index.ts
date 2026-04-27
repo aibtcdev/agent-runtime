@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import type { RuntimeConfig } from "../types";
 import type { ExecutionRequest, AdapterExecutionResult } from "../types";
 import { executeWithOllama } from "./ollama";
-import { executeWithAgentCli } from "./cli";
+import { executeWithAgentCli, getDriverRequiredArgs } from "./cli";
 
 type AdapterHealth = {
   adapterId: string;
@@ -56,8 +56,12 @@ export async function healthcheckAdapter(adapterId: string, config: RuntimeConfi
         command_path: commandPath ?? null,
         env_file: adapter.envFile ?? null,
         env_file_exists: adapter.envFile ? existsSync(adapter.envFile) : null,
+        settings_file: adapter.settingsFile ?? null,
+        settings_file_exists: adapter.settingsFile ? existsSync(adapter.settingsFile) : null,
         model: adapter.model ?? null,
-        provider_base_url: adapter.providerBaseUrl ?? null
+        provider_base_url: adapter.providerBaseUrl ?? null,
+        autonomy: adapter.autonomy ?? "restricted",
+        required_args: getDriverRequiredArgs(adapter)
       }
     };
   }

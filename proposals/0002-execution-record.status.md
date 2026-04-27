@@ -1,0 +1,275 @@
+State: in-progress
+Current focus: `0002` substrate remains verified and real Lumen bring-up is complete on `deploy/lumen/runtime.lumen.json`; resume next work from a new follow-on objective, not from this deploy blocker path.
+Completed:
+- Read `agent-runtime/proposals/0002-execution-record.md`
+- Read `agent-runtime/proposals/0001-proposal-process.md`
+- Read `agent-runtime/SCHEMA.md`
+- Read `2026-04-16-agent-runtime-planning.md`
+- Read `agent-runtime/proposals/0002-execution-record.status.md`
+- Read `agent-runtime/src/validation.ts`
+- Read `agent-runtime/src/bridges/github.ts`
+- Read `agent-runtime/profiles/lumen/profile.json`
+- Read `agent-runtime/fixtures/github-pr-merged.json`
+- Inspected `agent-runtime/src/db.ts`
+- Inspected `agent-runtime/src/runtime.ts`
+- Inspected `agent-runtime/src/context.ts`
+- Inspected `agent-runtime/src/types.ts`
+- Inspected `agent-runtime/src/adapters/cli.ts`
+- Inspected `agent-runtime/src/runtime.test.ts`
+- Completed targeted review of current `0002` implementation against proposal invariants and the requested cleanup targets
+- Moved CLI adapter audit artifacts to per-attempt paths under `state/artifacts/adapter-runs/<task_id>/<attempt_id>/` to avoid retry overwrite
+- Simplified bundle task snapshot input in `src/context.ts` so `bundle_hash` excludes volatile execution-state fields
+- Changed replay-grade precedence so unfrozen inputs stay `best_effort` even for remote-model `agent-cli` adapters
+- Removed `bundles.bundle_hash` uniqueness from the active schema and added `openDb()` migration logic so existing DBs can store repeated identical hashes across attempts
+- Removed an unused `runnerId` parameter from `compileBundle()` for a smaller `0002` surface
+- Added targeted tests for attempt-scoped audit paths, stable bundle hashing across retry-state drift, replay-grade precedence, and legacy bundle-hash migration
+- Quieted the dirty-workspace test setup so `bun test` output stays clean
+- Started isolated remote smoke on `dev@192.168.1.16` under `/home/dev/agent-runtime-0002-test`
+- Verified password-based SSH access, synced the current tree with `rsync`, and confirmed remote Bun availability
+- Remote smoke reached the compile gate and found strict `bunx tsc --noEmit` errors before runtime smoke continued
+- Fixed the strict TypeScript issues found by the remote smoke
+- Re-ran local `~/.bun/bin/bunx tsc --noEmit` successfully
+- Re-ran local `~/.bun/bin/bun test` successfully after the type fixes
+- Remote schema inspection confirmed the older live Lumen DB has only `tasks`, `run_events`, and `workflows`, with no `task_attempts`/`bundles` tables and no `run_events.attempt_id` column
+- Fixed `openDb()` migration ordering so legacy `run_events` schemas add `attempt_id` before attempt-aware indexes are created
+- Added a regression test covering the older live Lumen schema shape
+- Re-ran local `~/.bun/bin/bunx tsc --noEmit` successfully after the migration-order fix
+- Re-ran local `~/.bun/bin/bun test` successfully after the migration-order fix
+- Re-synced the updated tree to `/home/dev/agent-runtime-0002-test`
+- Remote copied-state smoke passed: the older Lumen DB now opens, `run_events.attempt_id` is added, and attempt/bundle indexes are created without error
+- Remote fresh-state smoke passed for `0002` substrate behavior: a queued task produced an attempt row, a bundle row, attempt-linked events, and persisted bundle artifacts before adapter failure was recorded
+- Remote re-check confirmed Lumen can now reach the configured Ollama endpoint and both adapters pass `healthcheck`
+- Remote fresh-state re-run completed adapter execution successfully on Lumen (`exit_status = ok`, `retry_class = none`)
+- The re-run still ended `blocked` because the model returned unmanaged `artifact_paths` (`src/runtime/skeleton`, `src/adapters/ollama`), and runtime validation correctly rejected them
+- Confirmed locally that `verifyCompletedTaskOutcome()` rejects any completed `artifact_paths` that do not resolve under `artifactDir`, regardless of task kind
+- Confirmed the GitHub bridge task declares no required artifacts; the block came only from model-returned `artifact_paths`, not from a missing runtime-written artifact
+- Confirmed `buildPromptText()` always asks for `artifact_paths` in the generic JSON footer, while `profile.result_schema` is currently descriptive only and does not narrow the contract for summary-only Lumen work
+- Attempted to re-open the saved remote attempt evidence for `9a0e54bf-2628-49cb-804a-3ddcf40b07bc`, but current shell access to `dev@192.168.1.16` no longer has the earlier password-based SSH path
+- Added a minimal `github-story` prompt-contract block in `src/context.ts` that marks the task as summary-only and explicitly requires `artifact_paths: []` unless a managed artifact was actually written
+- Added a regression test in `src/runtime.test.ts` covering the new `github-story` prompt guidance
+- Re-ran local `~/.bun/bin/bunx tsc --noEmit` successfully after the prompt-contract change
+- Re-ran local `~/.bun/bin/bun test` successfully after the prompt-contract change (`55` tests, `0` failures)
+- Restored password-based SSH access for the remote rerun via the documented repo-local `.env` `VM_PASSWORD` path
+- Re-synced the patched tree to `/home/dev/agent-runtime-0002-test`
+- Re-ran remote `~/.bun/bin/bunx tsc --noEmit` successfully on Lumen
+- Re-ran remote `~/.bun/bin/bun test` successfully on Lumen (`55` tests, `0` failures)
+- Re-ran remote `healthcheck` successfully on `deploy/lumen-test/runtime.json`
+- Queued a fresh remote GitHub bridge task `08d6bb42-fe1b-4f4d-b803-c913728e5c88`
+- Re-ran remote `run-once` successfully; the fresh GitHub-story task completed instead of blocking
+- Remote status confirmed the fresh task finished as `completed` with `attempt_id = 4616b317-a356-44bc-a06c-d3d56165fc14` and `bundle_hash = 00dd7af855474a75df3917e0849fb714f1afbacc595a8f372911fe3d271f2e7c`
+- Remote DB inspection confirmed the successful outcome now records `file_changes: []` and `artifact_paths: []`, matching the narrowed summary-only prompt contract
+- Re-read the source-of-truth bring-up files before touching real Lumen state: `deploy/lumen/DEPLOY.md`, `proposals/0002-execution-record.status.md`, `proposals/0002-execution-record.md`, `proposals/0001-proposal-process.md`, and `README.md`
+- Re-ran local `~/.bun/bin/bunx tsc --noEmit` successfully against the current tree before host bring-up
+- Re-ran local `~/.bun/bin/bun test` successfully before host bring-up (`55` tests, `0` failures)
+- Re-ran local `~/.bun/bin/bun run src/cli.ts healthcheck --config deploy/lumen/runtime.lumen.json` successfully
+- Re-confirmed password-based SSH access to `dev@192.168.1.16` via the repo-local `.env` `VM_PASSWORD` path
+- Confirmed the real host already had `/home/dev/agent-runtime` beside `/home/dev/.hermes/hermes-agent`
+- Confirmed `agent-runtime-operator@lumen.service` was already `enabled` and `active` on the host; `agent-runtime-dispatch@lumen.timer` remained `disabled` and `inactive`
+- Synced the current local tree to `/home/dev/agent-runtime` while preserving `deploy/lumen/state`
+- Re-ran remote `~/.bun/bin/bun install` on `/home/dev/agent-runtime`
+- Re-ran remote `~/.bun/bin/bunx tsc --noEmit` successfully on `/home/dev/agent-runtime`
+- Re-ran remote `~/.bun/bin/bun test` successfully on `/home/dev/agent-runtime` (`55` tests, `0` failures)
+- Re-ran remote `~/.bun/bin/bun run src/cli.ts healthcheck --config deploy/lumen/runtime.lumen.json` successfully on the real Lumen config
+- Queued a real-host GitHub bridge task `d1e54585-262a-440c-8a11-420aee62f688`
+- Re-ran real-host `run-once` successfully; the GitHub-story task completed with `attempt_id = 00c6c2c4-332a-4021-b42b-ddb3c8b12802`
+- Real-host status and DB inspection confirmed `bundle_hash = 84cd3aba9e71c8481c5c773ac043629762111279a7788f297178a832e02e2a64` and the completed outcome recorded `file_changes: []` and `artifact_paths: []`
+- Queued a real-host Discord bridge task `d0fb098c-ff0c-497d-b5df-98929bc5ab5e`
+- Observed that the first real-host `run-once` after queuing Discord correctly claimed a higher-priority existing workflow task first: `goal-execute` task `7f37ca33-01c1-45a1-b9fb-e94afc6d5ba2` from workflow `19`
+- Waited for workflow task `7f37ca33-01c1-45a1-b9fb-e94afc6d5ba2` to complete successfully on the host before retrying Discord
+- Re-ran real-host `run-once` on the pending Discord task and reproduced a live validation-fit failure on `discord-reply`
+- Real-host Discord task `d0fb098c-ff0c-497d-b5df-98929bc5ab5e` was blocked with `attempt_id = e069b711-efb6-4b76-b7ab-139705192504`
+- Captured the exact Discord validation issues on-host:
+  - unmanaged `artifact_paths` `/aibtc/docs/runtime-stability-update.md` and `/aibtc/changelog/latest-agent-runtime.md`
+  - nonexistent claimed file changes `agent-runtime/core.py (autonomy layer enhanced)` and `agent-runtime/tests/test_stability.py (pass rate up 95%)`
+- Added a narrow `discord-reply` prompt-contract block in `src/context.ts` that marks the task as reply-only, instructs the model to draft the reply in `operator_summary`, and requires `artifact_paths: []` / `file_changes: []` unless the run actually wrote managed artifacts or edited files
+- Added a regression test in `src/runtime.test.ts` covering the new `discord-reply` prompt guidance
+- Re-ran local `~/.bun/bin/bunx tsc --noEmit` successfully after the Discord prompt-contract change
+- Re-ran local `~/.bun/bin/bun test` successfully after the Discord prompt-contract change (`56` tests, `0` failures)
+- Re-synced the updated tree to `/home/dev/agent-runtime`
+- Re-ran remote `~/.bun/bin/bunx tsc --noEmit` successfully after the Discord prompt-contract change
+- Re-ran remote `~/.bun/bin/bun test` successfully after the Discord prompt-contract change (`56` tests, `0` failures)
+- Re-ran remote `~/.bun/bin/bun run src/cli.ts healthcheck --config deploy/lumen/runtime.lumen.json` successfully after the Discord prompt-contract change
+- Queued a fresh real-host Discord bridge task `dd5f86a9-17d5-4ce2-ba70-201901a0de85`
+- Observed that workflow `19` still had one higher-priority follow-on task and `run-once` claimed it first: `goal-verify` task `94f8f927-738f-4bdc-b7d7-ee894a9d3763`
+- Captured the first real-host `goal-verify` run details:
+  - `attempt_id = 89b7361c-6874-4b5a-969d-e4e6a7526a85`
+  - `bundle_hash = a2a7af275cc3ead2983cfd91205203a01b0bd75e6aa5d24e0687712b412f556b`
+  - `started_at = 2026-04-17T23:04:12.363Z`
+  - persisted bundle prompt path `/home/dev/agent-runtime/deploy/lumen/state/artifacts/bundles/2026-04-17/e848428e-7f52-487e-ac0d-1df9e8cef985.prompt.txt`
+- Waited through the first workflow-generated `goal-verify` run; task `94f8f927-738f-4bdc-b7d7-ee894a9d3763` completed successfully with `attempt_id = 89b7361c-6874-4b5a-969d-e4e6a7526a85`
+- Re-ran real-host `run-once` expecting the fresh Discord task, but workflow `19` immediately generated another higher-priority `goal-verify` task `356efd46-3500-4511-872c-9ab8b3b35391`
+- Captured the repeated workflow-generated `goal-verify` run details:
+  - `attempt_id = 796e839d-d26a-43f2-a6e3-02fc615bbc66`
+  - `bundle_hash = bfb207770fefd0b0143267e04c18b345c10e655013affc85ab6800cb2d6e03ed`
+  - `started_at = 2026-04-17T23:10:21.886Z`
+- Queried workflow `19` directly and confirmed it still held `current_state = verify` with `completed_at = null`; the fresh Discord task `dd5f86a9-17d5-4ce2-ba70-201901a0de85` remained pending behind the repeated verify work
+- Confirmed the operator dashboard remained reachable on `http://127.0.0.1:4314/api/status` during bring-up
+- Confirmed Hermes remained intact beside the proving runtime at `/home/dev/.hermes/hermes-agent`
+Assessment:
+- Found a real retry-evidence overwrite risk: CLI adapter audit artifacts are still written to `state/artifacts/adapter-runs/<task_id>/`, so later attempts can overwrite earlier attempt evidence.
+- Found unstable bundle-hash input surface: `compileBundle()` hashes a bundle document containing the full live `TaskRecord`, including volatile execution-state fields that can drift across retries of the same logical task.
+- Found a likely retry bug once bundle hashing is stabilized: the `bundles.bundle_hash` uniqueness constraint would reject a second attempt whose frozen inputs legitimately hash identically to the first.
+- Found a replay-grade consistency issue: `agent-cli` currently forces `non_replayable_model` even when other inputs are not frozen, where `best_effort` should take precedence.
+- Exact post-`0002` block reason: the GitHub-story/Ollama run completed, returned JSON, and was then converted to `blocked` in `runOnce()` because `verifyCompletedTaskOutcome()` flagged `outcome artifact path is not a managed on-disk artifact` for model-supplied repo paths (`src/runtime/skeleton`, `src/adapters/ollama`)
+- This is a prompt/output-contract mismatch, not a substrate failure: GitHub-story tasks on Lumen are summary-only by bridge shape, but the generic prompt still invites the model to populate `artifact_paths`
+- Validation adjustment is not the narrow move: making `artifact_paths` accept arbitrary repo paths, or adding task-class-specific validator exceptions, would broaden runtime semantics beyond the already approved `0002` surface
+- Narrowest next action if follow-on work is approved: tighten the GitHub-story/Lumen output contract so summary-only runs must return `artifact_paths: []` unless they actually create managed artifacts under `state/artifacts`; repo source paths belong in `file_changes` or the prose summary, not `artifact_paths`
+- Scope call: that prompt/output-contract tightening belongs after `0002`, not inside it; no further `0002` code change is justified by this failure
+- Real Lumen bring-up confirmed the same class of issue on `discord-reply`: reply-only tasks can still be blocked by model-invented repo paths and file changes unless their prompt contract is narrowed explicitly
+- The Discord prompt-contract tightening is the same narrow bring-up move as the earlier GitHub-story fix: it reduces invalid output surface without broadening validator semantics or adding runtime primitives
+- The remaining blocker is operational live state, not another `0002` substrate defect: older active workflow `19` continues to generate higher-priority `goal-*` tasks ahead of the fresh Discord bridge task on the shared live queue
+- The current critical-path blocker is no longer a single long-running task; it is workflow `19` repeatedly generating higher-priority `goal-verify` work while staying in `current_state = verify`, which keeps fresh Discord bridge tasks from being claimed on the shared live queue
+Remaining:
+- No remaining `0002` substrate work
+- No remaining work for the GitHub-story validation-fit fix
+- No remaining code work for the Discord validation-fit fix applied here unless the fresh rerun still blocks after the live queue clears
+- Still pending for real Lumen bring-up:
+  - inspect or clear workflow `19` (`instance_key = lumen-simplified-bounded-2026-04-12-05`) so it stops generating higher-priority `goal-verify` tasks
+  - once workflow `19` stops regenerating verify work, re-run `bun run src/cli.ts run-once --config deploy/lumen/runtime.lumen.json` so fresh Discord task `dd5f86a9-17d5-4ce2-ba70-201901a0de85` can be claimed
+  - confirm the fresh Discord task completes successfully under the narrowed prompt contract
+  - enable `agent-runtime-dispatch@lumen.timer`
+  - observe one unattended timer-fired cycle without retry/backoff anomalies
+Blockers:
+- None for `0002`
+- Real Lumen bring-up blocker: shared live queue interference from incomplete workflow `19`
+- Exact live blocker at last check:
+  - workflow `19` / `lumen-simplified-bounded-2026-04-12-05`
+  - `current_state = verify`
+  - latest generated running task `356efd46-3500-4511-872c-9ab8b3b35391`
+  - latest generated running attempt `796e839d-d26a-43f2-a6e3-02fc615bbc66`
+  - fresh Discord task `dd5f86a9-17d5-4ce2-ba70-201901a0de85` remained pending behind the repeated workflow-generated verify work
+Files changed:
+- `agent-runtime/proposals/0002-execution-record.status.md`
+- `agent-runtime/deploy/lumen/DEPLOY.md`
+- `agent-runtime/src/adapters/cli.ts`
+- `agent-runtime/src/context.ts`
+- `agent-runtime/src/db.ts`
+- `agent-runtime/src/runtime.ts`
+- `agent-runtime/src/runtime.test.ts`
+Tests run:
+- `cd agent-runtime && bun test src/runtime.test.ts` — pass (`53` tests, `0` failures)
+- `cd agent-runtime && bun test` — pass (`53` tests, `0` failures)
+- `cd agent-runtime && bun test` — pass (`53` tests, `0` failures) after test-output cleanup
+- Remote smoke: `cd /home/dev/agent-runtime-0002-test && ~/.bun/bin/bunx tsc --noEmit` — fail
+  - `src/context.ts(394,7)` nullability mismatch for `repo_root`
+  - `src/db.ts(449,7)` raw diagnostics object passed to sqlite bindings
+  - `src/runtime.test.ts(689,5)` incomplete `ExecutionRequest` fixture
+  - `src/runtime.test.ts(961,9)` adapter union narrowing issue in test
+  - `src/runtime.test.ts(1528,22)` unsafe `fetch` cast under stricter typings
+- Local validation after fixes:
+  - `cd agent-runtime && ~/.bun/bin/bunx tsc --noEmit` — pass
+  - `cd agent-runtime && ~/.bun/bin/bun test` — pass (`53` tests, `0` failures)
+- Remote copied-state migration smoke:
+  - `bun run src/cli.ts status --config deploy/lumen-migration-smoke/runtime.json` — fail
+  - Cause: legacy `run_events` table lacks `attempt_id`, but `openDb()` created the attempt-aware run-events index before the column migration
+- Local validation after migration-order fix:
+  - `cd agent-runtime && ~/.bun/bin/bunx tsc --noEmit` — pass
+  - `cd agent-runtime && ~/.bun/bin/bun test` — pass (`54` tests, `0` failures)
+- Remote compile/test/healthcheck after type fixes:
+  - `cd /home/dev/agent-runtime-0002-test && ~/.bun/bin/bunx tsc --noEmit` — pass
+  - `cd /home/dev/agent-runtime-0002-test && ~/.bun/bin/bun test` — pass (`53` tests, `0` failures on remote Bun 1.3.12)
+  - `cd /home/dev/agent-runtime-0002-test && ~/.bun/bin/bun run src/cli.ts healthcheck --config deploy/lumen/runtime.lumen.json` — fail only on `ollama-qwen` connectivity
+- Remote copied-state migration smoke after fix:
+  - `bun run src/cli.ts status --config deploy/lumen-migration-smoke/runtime.json` — pass
+  - Legacy copied DB now contains `run_events.attempt_id`; `bundles` and `task_attempts` tables exist; bundle indexes are present without a unique `bundle_hash` index
+- Remote fresh-state substrate smoke:
+  - `bun run src/cli.ts bridge-github --file fixtures/github-pr-merged.json --config deploy/lumen-test/runtime.json` — queued task `f579e0cc-6ccd-4c39-965a-a5b3a7dcd64c`
+  - `bun run src/cli.ts run-once --config deploy/lumen-test/runtime.json` — returned `retryable_failure` because Ollama was unreachable
+  - Despite adapter failure, `task_attempts`, `bundles`, `run_events`, and bundle artifacts were all written as required by `0002`
+- Remote re-run after Ollama connectivity restoration:
+  - `bun run src/cli.ts healthcheck --config deploy/lumen-test/runtime.json` — pass (`ollama-qwen` and `codex-ollama` both healthy)
+  - `bun run src/cli.ts bridge-github --file fixtures/github-pr-merged.json --config deploy/lumen-test/runtime.json` — queued task `b1ba1cb3-b128-4e7c-9876-137aa4bb506f`
+  - `bun run src/cli.ts run-once --config deploy/lumen-test/runtime.json` — adapter execution completed, then task finalized as `blocked` because validation rejected unmanaged artifact paths from the model output
+  - Remote DB confirmed `attempt_id = 9a0e54bf-2628-49cb-804a-3ddcf40b07bc`, `bundle_id = 72849dbe-ee46-4d68-a803-c63c29d471d0`, `bundle_hash = 69536414c87f9eebc543682e893f9e19218b5ad478176b908f2ec4db14e9e6c6`, and persisted bundle artifacts existed on disk
+- Local validation after GitHub-story prompt tightening:
+  - `cd agent-runtime && ~/.bun/bin/bunx tsc --noEmit` — pass
+  - `cd agent-runtime && ~/.bun/bin/bun test` — pass (`55` tests, `0` failures)
+- Remote validation after GitHub-story prompt tightening:
+  - `cd /home/dev/agent-runtime-0002-test && ~/.bun/bin/bunx tsc --noEmit` — pass
+  - `cd /home/dev/agent-runtime-0002-test && ~/.bun/bin/bun test` — pass (`55` tests, `0` failures)
+  - `cd /home/dev/agent-runtime-0002-test && ~/.bun/bin/bun run src/cli.ts healthcheck --config deploy/lumen-test/runtime.json` — pass
+  - `cd /home/dev/agent-runtime-0002-test && ~/.bun/bin/bun run src/cli.ts bridge-github --file fixtures/github-pr-merged.json --config deploy/lumen-test/runtime.json` — queued task `08d6bb42-fe1b-4f4d-b803-c913728e5c88`
+  - `cd /home/dev/agent-runtime-0002-test && ~/.bun/bin/bun run src/cli.ts run-once --config deploy/lumen-test/runtime.json` — pass; task completed with `attempt_id = 4616b317-a356-44bc-a06c-d3d56165fc14`
+  - Remote DB inspection showed the completed outcome used `artifact_paths: []` and no validator block
+- Local validation before real Lumen bring-up:
+  - `cd agent-runtime && ~/.bun/bin/bunx tsc --noEmit` — pass
+  - `cd agent-runtime && ~/.bun/bin/bun test` — pass (`55` tests, `0` failures)
+  - `cd agent-runtime && ~/.bun/bin/bun run src/cli.ts healthcheck --config deploy/lumen/runtime.lumen.json` — pass
+- Real-host validation before real Lumen bring-up:
+  - `cd /home/dev/agent-runtime && ~/.bun/bin/bun install` — pass
+  - `cd /home/dev/agent-runtime && ~/.bun/bin/bunx tsc --noEmit` — pass
+  - `cd /home/dev/agent-runtime && ~/.bun/bin/bun test` — pass (`55` tests, `0` failures)
+  - `cd /home/dev/agent-runtime && ~/.bun/bin/bun run src/cli.ts healthcheck --config deploy/lumen/runtime.lumen.json` — pass
+- Real-host GitHub bring-up:
+  - `cd /home/dev/agent-runtime && ~/.bun/bin/bun run src/cli.ts bridge-github --file fixtures/github-pr-merged.json --config deploy/lumen/runtime.lumen.json` — queued task `d1e54585-262a-440c-8a11-420aee62f688`
+  - `cd /home/dev/agent-runtime && ~/.bun/bin/bun run src/cli.ts run-once --config deploy/lumen/runtime.lumen.json` — pass; task completed with `attempt_id = 00c6c2c4-332a-4021-b42b-ddb3c8b12802`
+  - Real-host DB inspection showed `bundle_hash = 84cd3aba9e71c8481c5c773ac043629762111279a7788f297178a832e02e2a64` and completed outcome `file_changes: []`, `artifact_paths: []`
+- Real-host Discord bring-up before prompt tightening:
+  - `cd /home/dev/agent-runtime && ~/.bun/bin/bun run src/cli.ts bridge-discord --file fixtures/discord-mention.json --config deploy/lumen/runtime.lumen.json` — queued task `d0fb098c-ff0c-497d-b5df-98929bc5ab5e`
+  - first follow-on `run-once` was preempted by existing workflow task `7f37ca33-01c1-45a1-b9fb-e94afc6d5ba2`
+  - second follow-on `run-once` claimed the Discord task and returned `blocked` with `attempt_id = e069b711-efb6-4b76-b7ab-139705192504`
+  - verification issues:
+    - unmanaged `artifact_paths` `/aibtc/docs/runtime-stability-update.md`
+    - unmanaged `artifact_paths` `/aibtc/changelog/latest-agent-runtime.md`
+    - nonexistent claimed file change `agent-runtime/core.py (autonomy layer enhanced)`
+    - nonexistent claimed file change `agent-runtime/tests/test_stability.py (pass rate up 95%)`
+- Local validation after Discord prompt tightening:
+  - `cd agent-runtime && ~/.bun/bin/bunx tsc --noEmit` — pass
+  - `cd agent-runtime && ~/.bun/bin/bun test` — pass (`56` tests, `0` failures)
+- Real-host validation after Discord prompt tightening:
+  - `cd /home/dev/agent-runtime && ~/.bun/bin/bunx tsc --noEmit` — pass
+  - `cd /home/dev/agent-runtime && ~/.bun/bin/bun test` — pass (`56` tests, `0` failures)
+  - `cd /home/dev/agent-runtime && ~/.bun/bin/bun run src/cli.ts healthcheck --config deploy/lumen/runtime.lumen.json` — pass
+- Real-host Discord retry after prompt tightening:
+  - `cd /home/dev/agent-runtime && ~/.bun/bin/bun run src/cli.ts bridge-discord --file fixtures/discord-mention.json --config deploy/lumen/runtime.lumen.json` — queued task `dd5f86a9-17d5-4ce2-ba70-201901a0de85`
+  - next `run-once` was preempted by workflow-generated `goal-verify` task `94f8f927-738f-4bdc-b7d7-ee894a9d3763`, which later completed successfully
+  - the following `run-once` was preempted again by a newly generated workflow `19` `goal-verify` task `356efd46-3500-4511-872c-9ab8b3b35391`
+  - at the last check, workflow `19` still held `current_state = verify` and fresh Discord task `dd5f86a9-17d5-4ce2-ba70-201901a0de85` remained pending
+Last updated:
+- 2026-04-17T23:11:30Z
+Resume from here:
+- `0002` substrate remains verified. Real Lumen host validation and real GitHub-story bring-up both passed. The Discord reply contract has also been narrowed and revalidated locally and on-host.
+- Resume from the live host queue, not from more `0002` changes:
+  - inspect or clear workflow `19` / `lumen-simplified-bounded-2026-04-12-05`, which remained in `current_state = verify`
+  - once workflow `19` stops generating higher-priority verify work, run `cd /home/dev/agent-runtime && ~/.bun/bin/bun run src/cli.ts run-once --config deploy/lumen/runtime.lumen.json`
+  - confirm fresh Discord task `dd5f86a9-17d5-4ce2-ba70-201901a0de85` completes successfully
+  - then enable `agent-runtime-dispatch@lumen.timer` and verify one unattended timer-fired cycle while keeping Hermes intact beside the proving runtime
+
+Completion update (2026-04-21):
+- Re-checked the real host and confirmed workflow-generated verify tasks were no longer running, but workflow `19` still had `completed_at = null` while the fresh Discord task `dd5f86a9-17d5-4ce2-ba70-201901a0de85` remained pending
+- Manually completed workflow `19` on the real host with `~/.bun/bin/bun run src/cli.ts workflow-complete --id 19 --config deploy/lumen/runtime.lumen.json` to stop stale proving-loop queue interference
+- Re-ran real-host `run-once` after clearing workflow `19`; fresh Discord task `dd5f86a9-17d5-4ce2-ba70-201901a0de85` completed successfully with `attempt_id = ad3b7849-b514-4718-b2d6-176e1a8924cb`
+- Real-host DB inspection confirmed the Discord completion used `bundle_hash = d02cc93a86377826122c8b0abcad35b842d65a88eee748d44264e7512ab00103` and recorded `file_changes: []`, `artifact_paths: []`
+- Re-confirmed the operator dashboard remained reachable at `http://127.0.0.1:4314/api/status` after Discord completion
+- Enabled `agent-runtime-dispatch@lumen.timer` on the real host
+- Verified unattended timer-fired cycles on the real host:
+  - `2026-04-21T22:10:10Z` `agent-runtime-run-once@lumen.service` exited `0/SUCCESS` with `{ "ok": true, "status": "idle" }`
+  - `2026-04-21T22:10:33Z` `agent-runtime-run-once@lumen.service` exited `0/SUCCESS` with `{ "ok": true, "status": "idle" }`
+  - runtime log recorded matching `workflow_evaluation` events with `tasks_created: 0`
+  - dashboard/status last event became `dispatch_idle`
+- Re-confirmed `agent-runtime-operator@lumen.service` remained `enabled` and `active`
+- Re-confirmed `agent-runtime-dispatch@lumen.timer` became `enabled` and `active`
+- Re-confirmed Hermes remained intact beside the proving runtime at `/home/dev/.hermes/hermes-agent`
+- Real Lumen bring-up now satisfies the deploy exit condition end to end
+- Remaining: none for the current bring-up scope
+- Blockers: none for the completed real-host bring-up path
+- Resume from here: start the next task from a new follow-on objective, not from this deploy blocker path
+
+Follow-on planning checkpoint (2026-04-21):
+- Re-read the source-of-truth files before starting the next objective: `deploy/lumen/DEPLOY.md`, `proposals/0002-execution-record.status.md`, `proposals/0002-execution-record.md`, `proposals/0001-proposal-process.md`, and `README.md`
+- Inspected the current Lumen runtime, profile, workflow, artifact, and backlog surfaces to determine what already exists for a context-authority rollout and what is still missing
+- Confirmed the live proving substrate is sufficient for the next design tranche: workflows, managed artifacts, persisted bundles, snapshots, reports, and the live 5-minute timer all already exist
+- Confirmed the main missing pieces are proposal-backed scope, canonical artifact taxonomy, recurring authority workflow design, and operator identity/bootstrap runbooks rather than another substrate fix
+- Drafted `proposals/0006-lumen-context-authority.md` to define the staged rollout from narrow proving runtime to AIBTC context authority without widening live write scope prematurely
+- Added `deploy/lumen/CONTEXT_AUTHORITY.md` with the staged roadmap, dependencies, operator checkpoints, exact proposed signed message for email setup, exact GitHub bootstrap sequence, exact signing sequence, and Arc credential-store usage
+- Added `backlog/lumen-context-authority.json` as the first seed backlog for the narrow Stage 1 implementation loop
+- Remaining for the next session:
+  - review and approve Proposal `0006`
+  - choose the initial repo subset and local mirror paths
+  - implement only the Stage 1 read-only authority loop first
+- Blockers:
+  - operator approval is required before any email, GitHub, `gh`, or signing bootstrap action
+  - docs/wiki target repo selection is still pending
+- Resume from here:
+  - `bun run src/cli.ts seed-backlog --file backlog/lumen-context-authority.json --config deploy/lumen/runtime.lumen.json`
+  - begin the first read-only authority artifact implementation slice after Proposal `0006` review

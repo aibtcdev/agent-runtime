@@ -137,7 +137,7 @@ No runtime unit tests are required because this proposal is file-backed governan
 
 ## Acceptance Gate
 
-`0001` is accepted when the proposal directory exists, the first three proposal files exist with complete sections, and implementation can start from those files without another design rewrite.
+`0001` is accepted when the proposal directory exists, `0001` and `0002` exist with complete sections, any shipped `0003` mutation file also exists with complete sections, and implementation can start from those files without another design rewrite.
 
 ## Rollback
 

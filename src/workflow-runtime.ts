@@ -66,6 +66,14 @@ export function evaluateActiveWorkflows(db: Database, config: RuntimeConfig): { 
       }
     }
 
+    if (latestTask && latestTask.status === "operator_canceled") {
+      recordEvent(db, "workflow_state_operator_canceled", latestTask.task_id, {
+        workflow_id: workflow.id,
+        workflow_state: workflow.current_state
+      });
+      continue;
+    }
+
     if (latestTask && (latestTask.status === "blocked" || latestTask.status === "permanent_failure")) {
       if (workflow.template === "goal-loop") {
         recordEvent(db, "workflow_state_retry_disabled", latestTask.task_id, {

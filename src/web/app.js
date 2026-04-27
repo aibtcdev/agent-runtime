@@ -1,352 +1,733 @@
+// ── State ──
 const state = {
-  snapshots: [],
+  lastState: null,
   events: [],
-  activeTab: "workflows"
+  activeFilter: "all",
+  searchQuery: "",
+  disconnected: false,
+  selectedTaskId: null,
+  replyParentId: null,
+  cachedTasks: [],
+  dispatchPaused: false,
+  connState: "polling",
+  prevTasksHash: "",
+  seenEventKeys: {}
 };
 
+const MAX_EVENTS = 50;
+const API_LIMIT = 50;
+
+// ── Helpers ──
 function qs(id) {
   return document.getElementById(id);
 }
 
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
+function escapeHtml(str) {
+  return String(str ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
-function formatTime(value) {
-  if (!value) return "n/a";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return String(value);
-  return date.toLocaleString();
+function compactText(value, limit) {
+  limit = limit || 100;
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  return text.length <= limit ? text : text.slice(0, limit - 1) + "...";
 }
 
-function compactText(value, limit = 120) {
-  const text = String(value ?? "").replace(/\s+/g, " ").trim();
-  if (!text) return "No summary available.";
-  if (text.length <= limit) return text;
-  return `${text.slice(0, limit - 1)}…`;
-}
-
-function badge(status) {
-  return `<span class="badge ${escapeHtml(status)}">${escapeHtml(status)}</span>`;
-}
-
-function openDetails(title, subtitle, payload) {
-  qs("detail-title").textContent = title;
-  qs("detail-subtitle").textContent = subtitle;
-  qs("detail-body").textContent = typeof payload === "string" ? payload : JSON.stringify(payload, null, 2);
-  qs("detail-dialog").showModal();
-}
-
-function bindDetailButtons() {
-  Array.from(document.querySelectorAll("[data-detail-title]")).forEach((button) => {
-    button.addEventListener("click", () => {
-      const title = button.getAttribute("data-detail-title") || "Details";
-      const subtitle = button.getAttribute("data-detail-subtitle") || "";
-      const payload = button.getAttribute("data-detail-json") || "{}";
-      try {
-        openDetails(title, subtitle, JSON.parse(payload));
-      } catch {
-        openDetails(title, subtitle, payload);
-      }
-    });
-  });
-}
-
-function setActiveTab(tabName) {
-  state.activeTab = tabName;
-  Array.from(document.querySelectorAll(".tab-button")).forEach((button) => {
-    const isActive = button.getAttribute("data-tab") === tabName;
-    button.classList.toggle("is-active", isActive);
-    button.setAttribute("aria-selected", isActive ? "true" : "false");
-  });
-  Array.from(document.querySelectorAll(".tab-panel")).forEach((panel) => {
-    const isActive = panel.id === `tab-${tabName}`;
-    panel.classList.toggle("is-active", isActive);
-    panel.hidden = !isActive;
-  });
-  qs("workspace-meta").textContent = `Viewing ${tabName}`;
-}
-
-function bindTabs() {
-  Array.from(document.querySelectorAll(".tab-button")).forEach((button) => {
-    button.addEventListener("click", () => {
-      const tabName = button.getAttribute("data-tab");
-      if (!tabName) {
-        return;
-      }
-      setActiveTab(tabName);
-    });
-  });
-}
-
-function renderStatus(payload) {
-  qs("runtime-name").textContent = payload.runtime_name || "Lumen runtime";
-  const runtimeState = payload.status?.runtime_state || "idle";
-  const runtimeBadge = qs("runtime-state");
-  runtimeBadge.textContent = runtimeState;
-  runtimeBadge.className = `badge ${runtimeState}`;
-
-  const counts = payload.status?.counts || {};
-  qs("count-queued").textContent = String(counts.queued ?? 0);
-  qs("count-running").textContent = String(counts.running ?? 0);
-  qs("count-completed").textContent = String(counts.completed ?? 0);
-  qs("count-blocked").textContent = String(counts.blocked ?? 0);
-
-  const lastEvent = payload.status?.last_event;
-  qs("last-event").textContent = lastEvent
-    ? `${lastEvent.event_type} at ${formatTime(lastEvent.created_at)}`
-    : "No events yet";
-
-  const summaryBits = [
-    `${counts.running ?? 0} running`,
-    `${counts.queued ?? 0} queued`,
-    `${counts.blocked ?? 0} blocked`
-  ];
-  if (lastEvent?.event_type) {
-    summaryBits.push(`last event ${lastEvent.event_type}`);
+function taskHash(tasks) {
+  if (!tasks.length) return "";
+  var h = String(tasks.length);
+  for (var i = 0; i < Math.min(tasks.length, 30); i++) {
+    var task = tasks[i];
+    h += "," + [
+      task.task_id,
+      task.status || "",
+      task.updated_at || "",
+      task.last_error || "",
+      task.operator_summary || ""
+    ].join(":");
   }
-  qs("hero-summary").textContent = `Runtime is ${runtimeState}. ${summaryBits.join(" • ")}.`;
+  return h;
+}
+
+function setConnState(newState) {
+  state.connState = newState;
+  var el = qs("conn-indicator");
+  if (!el) return;
+  el.className = "conn-indicator " + newState;
+  el.title = {
+    connected: "SSE connected",
+    reconnecting: "SSE reconnecting",
+    polling: "Polling"
+  }[newState] || newState;
+}
+
+function renderTaskRefs(text) {
+  if (!text) return "";
+  return escapeHtml(text).replace(/#(\d+)/g, '<a class="ref-link" data-ref-task="$1">#$1</a>');
+}
+
+function timeAgo(iso) {
+  if (!iso) return "";
+  const diff = Date.now() - new Date(iso).getTime();
+  if (diff < 60000) return Math.floor(diff / 1000) + "s ago";
+  if (diff < 3600000) return Math.floor(diff / 60000) + "m ago";
+  return Math.floor(diff / 3600000) + "h ago";
+}
+
+function blink(el, cls, duration) {
+  el.classList.add(cls);
+  setTimeout(function() { el.classList.remove(cls); }, duration);
+}
+
+function styleBlink(el, color, duration) {
+  el.style.color = color;
+  setTimeout(function() { el.style.color = ""; }, duration);
+}
+
+// ── Dashboard update helper ──
+function applyDashboard(data) {
+  var el = qs("runtime-state");
+  var prevState = state.lastState;
+  state.lastState = data.runtime_state;
+  el.textContent = data.runtime_state;
+  el.className = "heartbeat-state " + data.runtime_state;
+  if (prevState && prevState !== data.runtime_state) blink(el, "blink", 400);
+
+  var counts = data.counts || {};
+  qs("count-running").textContent = counts.running != null ? counts.running : 0;
+  qs("count-queued").textContent = counts.queued != null ? counts.queued : 0;
+  qs("count-blocked").textContent = counts.blocked != null ? counts.blocked : 0;
+  qs("count-retryable").textContent = counts.retryable_failure != null ? counts.retryable_failure : 0;
+  qs("count-canceled").textContent = counts.operator_canceled != null ? counts.operator_canceled : 0;
+  state.dispatchPaused = !!(data.dispatch_paused && data.dispatch_paused.paused);
+  var pauseButton = qs("pause-toggle");
+  pauseButton.textContent = state.dispatchPaused ? "Resume" : "Pause";
+  pauseButton.classList.toggle("is-paused", state.dispatchPaused);
+
+  var countsEl = qs("counts");
+  var blockedCount = counts.blocked || 0;
+  var retryCount = counts.retryable_failure || 0;
+  if (blockedCount > 0) {
+    countsEl.classList.add("has-blocked");
+    qs("count-blocked").classList.add("danger");
+  } else {
+    countsEl.classList.remove("has-blocked");
+    qs("count-blocked").classList.remove("danger");
+  }
+  if (retryCount > 0) {
+    qs("count-retryable").classList.add("warn");
+  } else {
+    qs("count-retryable").classList.remove("warn");
+  }
+
+  var lastEvent = data.last_event;
+  qs("last-event").textContent = lastEvent
+    ? lastEvent.event_type + " " + timeAgo(lastEvent.created_at)
+    : "no events";
+
+  if (counts.running > 0 || counts.blocked > 0) {
+    styleBlink(el, counts.blocked > 0 ? "var(--danger)" : "var(--accent)", 1500);
+  }
+}
+
+// ── Collapsible Sections ──
+function initCollapsible() {
+  document.querySelectorAll(".section-header").forEach(function(header) {
+    var toggle = function() {
+      var sec = header.closest(".section");
+      sec.classList.toggle("collapsed");
+      header.setAttribute("aria-expanded", !sec.classList.contains("collapsed"));
+    };
+    header.addEventListener("click", toggle);
+    header.addEventListener("keydown", function(e) {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); }
+    });
+  });
+}
+
+// ── Filter Tabs ──
+function initFilters() {
+  document.querySelectorAll(".filter-tab").forEach(function(tab) {
+    tab.addEventListener("click", function() {
+      document.querySelectorAll(".filter-tab").forEach(function(t) { t.classList.remove("is-active"); });
+      tab.classList.add("is-active");
+      state.activeFilter = tab.dataset.filter;
+      renderTasks();
+    });
+  });
+}
+
+// ── Heartbeat ──
+function checkHeartbeat() {
+  fetch("/api/heartbeat", { cache: "no-store" }).then(function(res) {
+    if (!res.ok) throw new Error("unreachable");
+    if (state.disconnected) {
+      state.disconnected = false;
+      qs("heartbeat").classList.remove("disconnected");
+    }
+  }).catch(function() {
+    if (!state.disconnected) {
+      state.disconnected = true;
+      qs("heartbeat").classList.add("disconnected");
+    }
+  });
+}
+
+// ── Fetch ──
+function fetchState() {
+  return fetch("/api/state").then(function(res) { return res.ok ? res.json() : null; }).then(function(data) {
+    if (!data) return;
+    applyDashboard(data);
+  });
+}
+
+function fetchTasks() {
+  return fetch("/api/tasks?limit=" + API_LIMIT).then(function(res) { return res.ok ? res.json() : null; }).then(function(data) {
+    if (!data) return;
+    var tasks = data.tasks || [];
+    var hash = taskHash(tasks);
+    if (hash === state.prevTasksHash) return;
+
+    var changedIds = findChangedTasks(tasks, state.prevTasksHash !== "");
+    state.cachedTasks = tasks;
+    state.prevTasksHash = hash;
+
+    renderTasks(tasks, changedIds);
+  });
+}
+
+function findChangedTasks(newTasks, highlightChanges) {
+  var changed = new Set();
+  var prevMap = state._taskStatusSnapshot || {};
+  var currentSet = {};
+  for (var i = 0; i < newTasks.length; i++) {
+    currentSet[newTasks[i].task_id] = newTasks[i].status || "";
+    if (highlightChanges && prevMap[newTasks[i].task_id] !== currentSet[newTasks[i].task_id]) {
+      changed.add(newTasks[i].task_id);
+    }
+  }
+  for (var i = 0; i < newTasks.length; i++) {
+    if (highlightChanges && !prevMap[newTasks[i].task_id]) changed.add(newTasks[i].task_id);
+  }
+  state._taskStatusSnapshot = currentSet;
+  return changed;
+}
+
+function renderTasks(tasks, changedIds) {
+  if (!changedIds) changedIds = new Set();
+  var nowTasks = [];
+  var doneTasks = [];
+
+  for (var i = 0; i < tasks.length; i++) {
+    var task = tasks[i];
+    var filtered =
+      state.activeFilter === "all"
+      || state.activeFilter === task.status
+      || (state.activeFilter === "queued" && task.status === "pending")
+      || (state.activeFilter === "blocked" && (task.status === "blocked" || task.status === "retryable_failure"))
+      || (state.activeFilter === "completed" && task.status === "operator_canceled");
+
+    if (state.searchQuery) {
+      var q = state.searchQuery.toLowerCase();
+      var subject = (task.subject || "").toLowerCase();
+      var desc = (task.description || "").toLowerCase();
+      var summary = (task.operator_summary || "").toLowerCase();
+      if (!filtered || !(subject.includes(q) || desc.includes(q) || summary.includes(q))) continue;
+    }
+
+    if (filtered) {
+      (task.status === "completed" || task.status === "operator_canceled" ? doneTasks : nowTasks).push(task);
+    }
+  }
+
+  qs("now-count").textContent = nowTasks.length > 0 ? nowTasks.length + " active" : "";
+  qs("done-count").textContent = doneTasks.length > 0 ? doneTasks.length + " done" : "";
+
+  var emptyMsg = state.activeFilter === "all" ? "Nothing running" : "No matching tasks";
+  qs("now-tasks").innerHTML = nowTasks.length > 0
+    ? nowTasks.map(function(t) { return taskCardHTML(t, changedIds.has(t.task_id)); }).join("")
+    : "<div class='empty-state'>" + emptyMsg + "</div>";
+
+  var doneEmpty = state.activeFilter === "all" ? "No tasks completed yet" : "No matching tasks";
+  qs("done-tasks").innerHTML = doneTasks.length > 0
+    ? doneTasks.map(function(t) { return taskCardHTML(t, changedIds.has(t.task_id)); }).join("")
+    : "<div class='empty-state'>" + doneEmpty + "</div>";
+
+  // Apply animation class after DOM update
+  if (changedIds.size > 0) {
+    requestAnimationFrame(function() {
+      changedIds.forEach(function(id) {
+        var card = document.querySelector('[data-task-id="' + id + '"]');
+        if (card) {
+          card.classList.add("task-changed");
+          setTimeout(function() { card.classList.remove("task-changed"); }, 1300);
+        }
+      });
+    });
+  }
+}
+
+function taskCardHTML(task, isChanged) {
+  var subject = task.subject || task.kind || "Untitled";
+  var statusClass = task.status === "retryable_failure" ? "retryable_failure" : task.status;
+  var escSubject = escapeHtml(subject);
+  var escStatus = escapeHtml(statusClass);
+  var escTime = escapeHtml(timeAgo(task.updated_at));
+  var isMatch = !state.searchQuery || (
+    (task.subject || "").toLowerCase().includes(state.searchQuery) ||
+    (task.description || "").toLowerCase().includes(state.searchQuery) ||
+    (task.operator_summary || "").toLowerCase().includes(state.searchQuery)
+  );
+  return "<div class='task-card" + (isChanged ? " task-changed" : "") + "' data-task-id='" + task.task_id + "' tabindex='0'>" +
+    "<span class='status-dot " + escStatus + "'></span>" +
+    "<span class='task-subject" + (isMatch ? "" : " dimmed") + "'>" + escSubject + "</span>" +
+    "<span class='task-time'>" + escTime + "</span>" +
+    "</div>";
+}
+
+function fetchWorkflows() {
+  return fetch("/api/workflows").then(function(res) { return res.ok ? res.json() : null; }).then(function(data) {
+    if (!data) return;
+    renderWorkflows(data.workflows || []);
+  });
 }
 
 function renderWorkflows(workflows) {
-  qs("workflow-count").textContent = `${workflows.length} total`;
-  qs("workflow-list").innerHTML = workflows.map((workflow) => {
-    const currentState = workflow.completed_at ? "completed" : workflow.current_state;
-    const subtitle = `${workflow.template} • updated ${formatTime(workflow.updated_at)}`;
-    return `
-      <article class="card">
-        <div class="card-head">
-          <div class="truncate">
-            <strong class="truncate">${escapeHtml(workflow.instance_key)}</strong>
-            <p class="subtext">${escapeHtml(subtitle)}</p>
-          </div>
-          ${badge(currentState)}
-        </div>
-        <p class="summary-line">Current state: ${escapeHtml(currentState)}</p>
-        <div class="card-actions">
-          <span class="muted">${workflow.context ? Object.keys(workflow.context).length : 0} context keys</span>
-          <button
-            type="button"
-            class="link-button"
-            data-detail-title="Workflow: ${escapeHtml(workflow.instance_key)}"
-            data-detail-subtitle="${escapeHtml(subtitle)}"
-            data-detail-json="${escapeHtml(JSON.stringify(workflow))}"
-          >View details</button>
-        </div>
-      </article>
-    `;
-  }).join("") || `<p class="muted">No workflows recorded.</p>`;
-  bindDetailButtons();
+  var active = workflows.filter(function(w) { return !w.completed_at; });
+  if (active.length === 0) {
+    qs("now-workflows").innerHTML = "";
+    return;
+  }
+  qs("now-workflows").innerHTML = active.map(function(w) {
+    return "<div class='workflow-card' tabindex='0'>" +
+      "<span class='workflow-template'>" + escapeHtml(w.template) + "</span>" +
+      "<span class='workflow-key'>" + escapeHtml(w.instance_key) + " — " + escapeHtml(w.current_state) + "</span>" +
+      "</div>";
+  }).join("");
 }
 
-function renderTasks(tasks) {
-  const runningTasks = tasks.filter((task) => task.status === "running");
-  const workflowTasks = tasks.filter((task) => task.source?.startsWith("workflow:"));
-  const otherTasks = tasks.filter((task) => !task.source?.startsWith("workflow:"));
-
-  qs("running-task-count").textContent = `${runningTasks.length} active`;
-  qs("running-task-list").innerHTML = renderTaskCards(
-    runningTasks,
-    "No running tasks right now."
-  );
-  qs("workflow-task-list").innerHTML = renderTaskCards(
-    workflowTasks,
-    "No recent workflow tasks."
-  );
-  qs("task-list").innerHTML = renderTaskCards(
-    otherTasks,
-    "No recent non-workflow tasks."
-  );
-  bindDetailButtons();
+function fetchEvents() {
+  return fetch("/api/events?limit=" + API_LIMIT).then(function(res) { return res.ok ? res.json() : null; }).then(function(data) {
+    if (!data) return;
+    var events = dedupEvents(data.events || []);
+    renderEvents(events);
+  });
 }
 
-function renderTaskCards(tasks, emptyMessage) {
-  return tasks.map((task) => {
-    const title = task.subject || task.kind;
-    const subtitle = `${task.kind} • ${task.source} • updated ${formatTime(task.updated_at)}`;
-    const summary = compactText(task.operator_summary || task.description || "No summary");
-    return `
-      <article class="card">
-        <div class="card-head">
-          <div class="truncate">
-            <strong class="truncate">${escapeHtml(title)}</strong>
-            <p class="subtext">${escapeHtml(subtitle)}</p>
-          </div>
-          ${badge(task.status)}
-        </div>
-        <p class="summary-line">${escapeHtml(summary)}</p>
-        <div class="card-actions">
-          <span class="muted">attempt ${escapeHtml(task.attempt_count)}/${escapeHtml(task.max_attempts)}</span>
-          <button
-            type="button"
-            class="link-button"
-            data-detail-title="Task: ${escapeHtml(title)}"
-            data-detail-subtitle="${escapeHtml(subtitle)}"
-            data-detail-json="${escapeHtml(JSON.stringify(task))}"
-          >View details</button>
-        </div>
-      </article>
-    `;
-  }).join("") || `<p class="muted">${escapeHtml(emptyMessage)}</p>`;
+function dedupEvents(newEvents) {
+  var seen = state.seenEventKeys;
+  var filtered = [];
+  for (var i = 0; i < newEvents.length; i++) {
+    var e = newEvents[i];
+    var key = eventKey(e);
+    if (!seen[key]) {
+      seen[key] = e.created_at || String(Date.now());
+      filtered.push(e);
+    }
+  }
+  // Evict old entries to keep memory bounded
+  var entries = Object.keys(seen).sort();
+  if (entries.length > 200) {
+    for (var i = 0; i < entries.length - 100; i++) {
+      delete seen[entries[i]];
+    }
+  }
+  return filtered;
+}
+
+function eventKey(event) {
+  return event.id != null
+    ? "id:" + event.id
+    : [event.created_at, event.event_type, event.task_id || "", event.attempt_id || ""].join("|");
 }
 
 function renderEvents(events) {
-  state.events = events.slice(-12);
-  qs("event-list").innerHTML = state.events.slice().reverse().map((event) => {
-    const detailSummary = compactText(JSON.stringify(event.detail || {}), 90);
-    return `
-      <article class="card">
-        <div class="card-head">
-          <strong class="truncate">${escapeHtml(event.event_type)}</strong>
-          <span class="muted">${formatTime(event.created_at)}</span>
-        </div>
-        <p class="summary-line">${escapeHtml(detailSummary)}</p>
-        <div class="card-actions">
-          <span class="muted">#${escapeHtml(event.id)}</span>
-          <button
-            type="button"
-            class="link-button"
-            data-detail-title="Event: ${escapeHtml(event.event_type)}"
-            data-detail-subtitle="Recorded ${escapeHtml(formatTime(event.created_at))}"
-            data-detail-json="${escapeHtml(JSON.stringify(event))}"
-          >View details</button>
-        </div>
-      </article>
-    `;
-  }).join("") || `<p class="muted">No recent events.</p>`;
-  bindDetailButtons();
-}
+  var eventList = qs("event-list");
+  var atBottom = !eventList || eventList.scrollHeight - eventList.scrollTop - eventList.clientHeight < 60;
+  var mergedByKey = {};
+  state.events.concat(events).forEach(function(event) {
+    mergedByKey[eventKey(event)] = event;
+  });
+  state.events = Object.keys(mergedByKey)
+    .map(function(key) { return mergedByKey[key]; })
+    .sort(function(a, b) {
+      var aId = a.id != null ? Number(a.id) : null;
+      var bId = b.id != null ? Number(b.id) : null;
+      if (aId != null && bId != null) return aId - bId;
+      return String(a.created_at || "").localeCompare(String(b.created_at || ""));
+    })
+    .slice(-MAX_EVENTS);
 
-function fillSnapshotSelect(select, snapshots) {
-  select.innerHTML = snapshots.map((snapshot) => `
-    <option value="${escapeHtml(snapshot.path)}">${escapeHtml(formatTime(snapshot.captured_at))} • ${escapeHtml(snapshot.name)}</option>
-  `).join("");
-}
+  var velocity = qs("event-velocity");
+  if (state.events.length >= 2) {
+    var first = new Date(state.events[0].created_at);
+    var last = new Date(state.events[state.events.length - 1].created_at);
+    var diff = Math.round((last - first) / 1000);
+    velocity.textContent = diff > 0 ? state.events.length + " events in " + diff + "s" : state.events.length + " events";
+  } else {
+    velocity.textContent = state.events.length > 0 ? "1 event" : "";
+  }
 
-function renderSnapshots(snapshots) {
-  state.snapshots = snapshots;
-  const before = qs("snapshot-before");
-  const after = qs("snapshot-after");
-  fillSnapshotSelect(before, snapshots);
-  fillSnapshotSelect(after, snapshots);
-  if (snapshots.length > 1) {
-    before.selectedIndex = 1;
-    after.selectedIndex = 0;
+  qs("event-list").innerHTML = state.events.slice().reverse().map(function(e) {
+    return "<div class='event-row'>" +
+      "<span class='event-type'>" + escapeHtml(e.event_type) + "</span>" +
+      "<span class='event-task'>" + escapeHtml(e.task_id ? "#" + e.task_id.slice(0, 8) : "") + "</span>" +
+      "<span class='event-time'>" + escapeHtml(timeAgo(e.created_at)) + "</span>" +
+      "</div>";
+  }).join("") || "<div class='empty-state'>No events</div>";
+
+  // Auto-scroll event list to keep newest visible if not scrolled up
+  if (eventList) {
+    if (atBottom) eventList.scrollTop = eventList.scrollHeight;
   }
 }
 
-async function loadArtifacts(path = "") {
-  const response = await fetch(`/api/artifacts${path ? `?path=${encodeURIComponent(path)}` : ""}`);
-  const payload = await response.json();
-  qs("artifact-path").textContent = `state/artifacts/${payload.path || ""}`;
+// ── Task Detail ──
+function showTaskDetail(taskId) {
+  state.selectedTaskId = taskId;
+  var task = state.cachedTasks.find(function(t) { return t.task_id === taskId; });
+  if (!task) task = state.cachedTasks[0];
 
-  if (payload.type === "file") {
-    await loadArtifactFile(payload.path);
-    return;
+  var subject = task.subject || task.kind || "Untitled";
+  qs("detail-title").textContent = subject;
+  var skillRefs = task.payload && Array.isArray(task.payload.skill_refs)
+    ? task.payload.skill_refs.join(", ")
+    : "(none)";
+
+  var fields = [
+    { label: "ID", value: task.task_id, mono: true },
+    { label: "Status", value: task.status.replace(/_/g, " ") },
+    { label: "Kind", value: task.kind },
+    { label: "Source", value: task.source },
+    { label: "Priority", value: String(task.priority) },
+    { label: "Attempts", value: task.attempt_count + " / " + task.max_attempts },
+    { label: "Profile", value: task.requested_profile },
+    { label: "Adapter", value: task.requested_adapter },
+    { label: "Started", value: task.started_at },
+    { label: "Finished", value: task.finished_at },
+    { label: "Created", value: task.created_at },
+    { label: "Updated", value: task.updated_at },
+    { label: "Last Error", value: task.last_error || "(none)", mono: task.last_error != null },
+    { label: "Operator Summary", value: task.operator_summary || "(none)", refs: true },
+    { label: "Parent", value: task.payload && task.payload.parent_id ? "#" + task.payload.parent_id.slice(0, 8) : "(none)" },
+    { label: "Skill Refs", value: skillRefs },
+    { label: "Artifacts", value: task.artifact_paths ? task.artifact_paths.join(", ") : "(none)" }
+  ];
+
+  var bodyHTML = "";
+  for (var i = 0; i < fields.length; i++) {
+    var f = fields[i];
+    if (f.value) {
+      var cls = f.mono ? "detail-value monospace" : "detail-value";
+      var content = f.refs ? renderTaskRefs(f.value) : escapeHtml(f.value);
+      bodyHTML += "<div class='detail-field'>" +
+        "<div class='detail-label'>" + escapeHtml(f.label) + "</div>" +
+        "<div class='" + cls + "'>" + content + "</div>" +
+        "</div>";
+    }
   }
 
-  qs("artifact-browser").innerHTML = (payload.entries || []).map((entry) => `
-    <div class="artifact-entry">
-      <button type="button" data-path="${escapeHtml(entry.path)}" data-type="${escapeHtml(entry.type)}">
-        <span class="truncate">${entry.type === "directory" ? "DIR" : "FILE"} ${escapeHtml(entry.name)}</span>
-      </button>
-      <span class="muted">${formatTime(entry.updated_at)}</span>
-    </div>
-  `).join("") || `<p class="muted">No artifacts yet.</p>`;
+  qs("detail-body").innerHTML = bodyHTML;
 
-  Array.from(qs("artifact-browser").querySelectorAll("button[data-path]")).forEach((button) => {
-    button.addEventListener("click", async () => {
-      const targetPath = button.getAttribute("data-path");
-      const type = button.getAttribute("data-type");
-      if (!targetPath) return;
-      if (type === "directory") {
-        await loadArtifacts(targetPath);
-        return;
-      }
-      await loadArtifactFile(targetPath);
+  var parentId = task.task_id;
+  var children = state.cachedTasks.filter(function(t) {
+    var p = t.payload && t.payload.parent_id;
+    return typeof p === "string" && p === parentId;
+  });
+
+  if (children.length > 0) {
+    var completed = children.filter(function(t) { return t.status === "completed"; }).length;
+    var running = children.filter(function(t) { return t.status === "running"; }).length;
+    qs("detail-children").textContent = children.length + " children: " +
+      completed + " done, " + running + " running, " + (children.length - completed - running) + " other";
+  } else {
+    qs("detail-children").textContent = "no children";
+  }
+  var cancelButton = qs("detail-cancel");
+  var cancelable = ["pending", "retryable_failure", "blocked"].includes(task.status);
+  cancelButton.hidden = !cancelable && task.status !== "running";
+  cancelButton.disabled = !cancelable;
+  cancelButton.textContent = task.status === "running" ? "Cancel unavailable while running" : "Cancel";
+
+  var drawer = qs("detail-drawer");
+  var backdrop = qs("detail-backdrop");
+  drawer.hidden = false;
+  requestAnimationFrame(function() {
+    drawer.classList.add("drawer-open");
+    backdrop.hidden = false;
+    requestAnimationFrame(function() {
+      backdrop.classList.add("drawer-visible");
     });
   });
 }
 
-async function loadArtifactFile(targetPath) {
-  const response = await fetch(`/api/artifact?path=${encodeURIComponent(targetPath)}`);
-  const payload = await response.json();
-  qs("artifact-content").textContent = payload.content || "Empty artifact.";
-}
-
-function summarizeReport(report) {
-  if (!report) {
-    return "No report loaded.";
+function hideTaskDetail(preserveReplyContext) {
+  preserveReplyContext = preserveReplyContext === true;
+  var drawer = qs("detail-drawer");
+  var backdrop = qs("detail-backdrop");
+  drawer.classList.remove("drawer-open");
+  backdrop.classList.remove("drawer-visible");
+  state.selectedTaskId = null;
+  if (!preserveReplyContext) {
+    state.replyParentId = null;
   }
-  const lines = [
-    `Completed delta: ${report.completed_task_delta?.delta ?? 0}`,
-    `Queued delta: ${report.queued_task_delta?.delta ?? 0}`,
-    `New artifacts: ${(report.new_artifacts_created || []).length}`,
-    `Workflow changes: ${(report.workflow_state_changes || []).length}`,
-    `Blocked or retryable: ${(report.blocked_or_retryable_tasks || []).length}`,
-    `Ended idle: ${report.ended_idle ? "yes" : "no"}`
-  ];
-  return lines.join("\n");
-}
-
-async function loadReport() {
-  const before = qs("snapshot-before").value;
-  const after = qs("snapshot-after").value;
-  if (!before || !after) {
-    qs("report-view").textContent = "Need two snapshots to compare.";
-    return;
+  var input = qs("reply-input");
+  if (!preserveReplyContext && (input.value === "" || input.value.indexOf("[re:") === 0)) {
+    input.placeholder = "New task...";
   }
-  const response = await fetch(`/api/report?before=${encodeURIComponent(before)}&after=${encodeURIComponent(after)}`);
-  const payload = await response.json();
-  const report = payload.report || payload;
-  qs("report-view").textContent = summarizeReport(report);
-  qs("report-view").dataset.rawReport = JSON.stringify(report, null, 2);
+  setTimeout(function() {
+    if (!drawer.classList.contains("drawer-open")) {
+      drawer.hidden = true;
+      backdrop.hidden = true;
+    }
+  }, 260);
 }
 
-async function loadDashboard() {
-  const response = await fetch("/api/dashboard");
-  const payload = await response.json();
-  renderStatus(payload);
-  renderWorkflows(payload.workflows || []);
-  renderTasks(payload.recent_tasks || []);
-  renderEvents(payload.events || []);
-  renderSnapshots(payload.snapshots || []);
-  await loadArtifacts("");
+// ── Reply Bar ──
+function initReplyBar() {
+  var input = qs("reply-input");
+  var sendBtn = qs("reply-send");
+
+  input.addEventListener("input", function() {
+    input.style.height = "auto";
+    input.style.height = Math.min(input.scrollHeight, 120) + "px";
+  });
+
+  input.addEventListener("keydown", function(e) {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendBtn.click();
+    }
+  });
+
+  sendBtn.addEventListener("click", function() {
+    var message = input.value.trim();
+    if (!message) return;
+
+    qs("reply-status").textContent = "";
+    var skillRefs = parseSkillRefs(message);
+    var payload = { message: message };
+    if (skillRefs.length > 0) {
+      payload.skill_refs = skillRefs;
+    }
+    if (state.replyParentId) {
+      payload.parent_id = state.replyParentId;
+      payload.subject = "[re: " + state.replyParentId.slice(0, 8) + "] " + message.slice(0, 120);
+    }
+
+    fetch("/api/tasks/queue", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    }).then(function(res) {
+      if (res.ok) {
+        input.value = "";
+        input.style.height = "auto";
+        state.replyParentId = null;
+        qs("reply-status").textContent = "queued";
+        hideTaskDetail();
+        return Promise.all([fetchState(), fetchTasks(), fetchEvents()]);
+      }
+      return res.json().then(function(err) { throw err; });
+    }).catch(function(err) {
+      qs("reply-status").textContent = "Error: " + (err.error || err.message);
+    });
+  });
 }
+
+function parseSkillRefs(message) {
+  var refs = [];
+  var re = /(^|\s)\/([a-zA-Z][\w-]*)/g;
+  var match;
+  while ((match = re.exec(message)) !== null) {
+    if (refs.indexOf(match[2]) === -1) refs.push(match[2]);
+  }
+  return refs;
+}
+
+// ── Reply button in detail ──
+function initDetailReply() {
+  qs("detail-reply").addEventListener("click", function() {
+    if (!state.selectedTaskId) return;
+    var parentId = state.selectedTaskId;
+    hideTaskDetail(true);
+    state.replyParentId = parentId;
+    var input = qs("reply-input");
+    input.focus();
+    input.placeholder = "Reply...";
+    input.value = "[re: " + parentId.slice(0, 8) + "] ";
+  });
+
+  qs("detail-close").addEventListener("click", function() { hideTaskDetail(false); });
+  qs("detail-backdrop").addEventListener("click", function() { hideTaskDetail(false); });
+  qs("detail-cancel").addEventListener("click", function() {
+    if (!state.selectedTaskId) return;
+    cancelTask(state.selectedTaskId);
+  });
+}
+
+function cancelTask(taskId) {
+  fetch("/api/tasks/" + encodeURIComponent(taskId) + "/cancel", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reason: "operator UI cancel" })
+  }).then(function(res) {
+    if (res.ok) return res.json();
+    return res.json().then(function(err) { throw err; });
+  }).then(function() {
+    hideTaskDetail(false);
+    return Promise.all([fetchState(), fetchTasks(), fetchEvents()]);
+  }).catch(function(err) {
+    qs("detail-children").textContent = "cancel failed: " + (err.error || err.message);
+  });
+}
+
+function initPauseToggle() {
+  qs("pause-toggle").addEventListener("click", function() {
+    var nextPaused = !state.dispatchPaused;
+    fetch("/api/pause", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ paused: nextPaused, reason: "operator UI" })
+    }).then(function(res) {
+      if (res.ok) return res.json();
+      return res.json().then(function(err) { throw err; });
+    }).then(function() {
+      return fetchState();
+    }).catch(function(err) {
+      qs("last-event").textContent = "pause error: " + (err.error || err.message);
+    });
+  });
+}
+
+// ── Search ──
+function initSearch() {
+  var searchInput = qs("search-input");
+  var debounceTimer;
+
+  qs("search-toggle").addEventListener("click", function() {
+    var bar = qs("search-bar");
+    if (bar.hidden) {
+      bar.hidden = false;
+      searchInput.focus();
+    } else {
+      bar.hidden = true;
+      searchInput.value = "";
+      state.searchQuery = "";
+      renderTasks(state.cachedTasks);
+    }
+  });
+
+  searchInput.addEventListener("input", function(e) {
+    clearTimeout(debounceTimer);
+    state.searchQuery = e.target.value.trim();
+    debounceTimer = setTimeout(function() { renderTasks(state.cachedTasks); }, 200);
+  });
+}
+
+// ── Event delegation for task cards ──
+function initTaskDelegation() {
+  document.addEventListener("click", function(e) {
+    var card = e.target.closest(".task-card");
+    if (card) {
+      showTaskDetail(card.dataset.taskId);
+      return;
+    }
+    var link = e.target.closest(".ref-link");
+    if (link) {
+      e.preventDefault();
+      showTaskDetail(link.dataset.refTask);
+    }
+  });
+}
+
+// ── SSE Stream ──
+var esInstance = null;
 
 function connectStream() {
-  const source = new EventSource("/api/stream");
-  source.addEventListener("dashboard", (event) => {
-    const payload = JSON.parse(event.data);
-    renderStatus(payload);
-    renderWorkflows(payload.workflows || []);
-    renderTasks(payload.recent_tasks || []);
-    renderEvents(payload.events || []);
+  if (esInstance) return;
+  esInstance = new EventSource("/api/stream");
+
+  setConnState("reconnecting");
+
+  esInstance.addEventListener("dashboard", function(event) {
+    var data = JSON.parse(event.data);
+    setConnState("connected");
+    applyDashboard(data);
   });
-  source.addEventListener("events", (event) => {
-    const payload = JSON.parse(event.data);
-    renderStatus({ runtime_name: qs("runtime-name").textContent, status: payload.status });
-    renderEvents([...state.events, ...(payload.events || [])]);
+
+  esInstance.addEventListener("events", function(event) {
+    var data = JSON.parse(event.data);
+    var prevState = state.lastState;
+
+    var counts = data.status ? data.status.counts : {};
+    if (counts.blocked > 0) {
+      styleBlink(qs("runtime-state"), "var(--danger)", 1500);
+    }
+    if (prevState !== (data.status ? data.status.runtime_state : null)) {
+      blink(qs("runtime-state"), "blink", 400);
+    }
+
+    // Deduplicate SSE events
+    var newEvents = dedupEvents(data.events || []).slice(0, MAX_EVENTS);
+
+    if (newEvents.length > 0) {
+      renderEvents(newEvents);
+    }
   });
-  source.onerror = () => {
-    source.close();
-    window.setTimeout(connectStream, 5000);
+
+  esInstance.onerror = function() {
+    setConnState("reconnecting");
+    esInstance.close();
+    esInstance = null;
+    setTimeout(connectStream, 10000);
   };
 }
 
-qs("load-report").addEventListener("click", loadReport);
-qs("report-view").addEventListener("click", () => {
-  const rawReport = qs("report-view").dataset.rawReport;
-  if (!rawReport) {
-    return;
-  }
-  openDetails("Snapshot report", "Expanded before/after JSON", JSON.parse(rawReport));
-});
+// ── Polling fallback ──
+var sseConnected = false;
 
-bindTabs();
-setActiveTab(state.activeTab);
-await loadDashboard();
-connectStream();
+function startPolling() {
+  if (sseConnected) return;
+  setInterval(function() {
+    Promise.all([fetchState(), fetchTasks(), fetchWorkflows(), fetchEvents(), checkHeartbeat()]);
+  }, 3000);
+}
+
+// ── Escape key ──
+function initEscapeKey() {
+  document.addEventListener("keydown", function(e) {
+    if (e.key === "Escape") {
+      var drawer = qs("detail-drawer");
+      if (!drawer.hidden) {
+        hideTaskDetail(false);
+      }
+    }
+  });
+}
+
+// ── Init ──
+async function init() {
+  setConnState("polling");
+  initCollapsible();
+  initFilters();
+  initReplyBar();
+  initDetailReply();
+  initPauseToggle();
+  initSearch();
+  initTaskDelegation();
+  initEscapeKey();
+
+  await Promise.all([fetchState(), fetchTasks(), fetchWorkflows(), fetchEvents()]);
+
+  setInterval(checkHeartbeat, 5000);
+  checkHeartbeat();
+
+  connectStream();
+  startPolling();
+}
+
+init();

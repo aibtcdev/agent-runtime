@@ -4,7 +4,13 @@ export type TaskStatus =
   | "completed"
   | "retryable_failure"
   | "permanent_failure"
-  | "blocked";
+  | "blocked"
+  | "operator_canceled";
+
+export type AttemptStatus = "running" | "finished";
+export type AttemptExitStatus = "ok" | "error" | "timeout";
+export type AttemptRetryClass = "none" | "retryable" | "permanent";
+export type ReplayGrade = "inputs_frozen" | "best_effort" | "non_replayable_model";
 
 export type RuntimeConfig = {
   runtimeName: string;
@@ -31,13 +37,14 @@ export type OllamaGenerateAdapterConfig = {
 
 export type AgentCliAdapterConfig = {
   mode: "agent-cli";
-  driver: "codex" | "claude-code" | "opencode" | "grok-cli";
+  driver: "codex" | "claude-code" | "hermes-agent";
   command: string;
   timeoutMs: number;
   model?: string;
   workingDir?: string;
   sandbox?: "read-only" | "workspace-write" | "danger-full-access";
   envFile?: string;
+  settingsFile?: string;
   env?: Record<string, string>;
   extraArgs?: string[];
   providerId?: string;
@@ -45,6 +52,7 @@ export type AgentCliAdapterConfig = {
   providerBaseUrl?: string;
   providerWireApi?: "responses";
   providerRequiresOpenAIAuth?: boolean;
+  autonomy?: "restricted" | "trusted-vm";
 };
 
 export type AdapterConfig = OllamaGenerateAdapterConfig | AgentCliAdapterConfig;
@@ -99,8 +107,52 @@ export type TaskRecord = {
   last_error: string | null;
 };
 
+export type TaskAttemptRecord = {
+  attempt_id: string;
+  task_id: string;
+  adapter_id: string;
+  adapter_kind: string;
+  model: string | null;
+  runner_id: string;
+  bundle_id: string | null;
+  status: AttemptStatus;
+  started_at: string;
+  ended_at: string | null;
+  exit_status: AttemptExitStatus | null;
+  retry_class: AttemptRetryClass | null;
+  prompt_path: string | null;
+  stdout_path: string | null;
+  stderr_path: string | null;
+  result_path: string | null;
+  diagnostics: Record<string, unknown> | null;
+};
+
+export type BundleArtifactRecord = {
+  bundle_id: string;
+  task_id: string;
+  attempt_id: string;
+  bundle_hash: string;
+  agent_id: string | null;
+  profile_id: string;
+  adapter_id: string;
+  model: string | null;
+  variant_id: string | null;
+  evaluator_version: string | null;
+  replay_grade: ReplayGrade;
+  relative_path: string;
+  prompt_relative_path: string;
+  created_at: string;
+};
+
+export type ClaimedTaskRecord = {
+  task: TaskRecord;
+  attempt: TaskAttemptRecord;
+};
+
 export type ExecutionRequest = {
   task: TaskRecord;
+  attempt: TaskAttemptRecord;
+  bundle: BundleArtifactRecord;
   profile: Profile;
   adapterId: string;
   adapterConfig: AdapterConfig;
@@ -120,7 +172,10 @@ export type AdapterExecutionResult = {
 export type CanonicalOutcome = {
   status: Exclude<TaskStatus, "pending" | "running">;
   operator_summary: string;
-  machine_status: "ok" | "needs_retry" | "blocked" | "failed";
+  machine_status: "ok" | "needs_retry" | "blocked" | "failed" | "canceled";
+  attempt_id?: string;
+  bundle_id?: string;
+  bundle_hash?: string;
   file_changes?: string[];
   artifact_paths?: string[];
   follow_up_tasks?: TaskInput[];
@@ -192,6 +247,7 @@ export type RunEventRecord = {
   id: number;
   event_type: string;
   task_id: string | null;
+  attempt_id: string | null;
   detail: Record<string, unknown>;
   created_at: string;
 };

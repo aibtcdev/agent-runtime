@@ -1,0 +1,49 @@
+{
+  "tasks": [
+    {
+      "kind": "skill-proof",
+      "source": "operator:phase5-dispatch:alb-inbox-verify:2026-04-23",
+      "subject": "Prove email-alb-inbox-read skill works under dispatch (Lumen Foundation MVP Phase 5 re-verify)",
+      "description": "Dispatch-driven equivalent of Phase 5 verify from the Lumen Foundation MVP quest. Replaces the human paste-into-Claude-Code workflow. This is the cornerstone test for email-based verification flows — future experiments (GitHub account verify, etc.) follow the same pattern.",
+      "priority": 9,
+      "requested_profile": "proving-codex",
+      "payload": {
+        "mission": "Execute the Lumen ALB inbox read skill end-to-end and write a verification artifact that proves the dispatch loop can drive email reads.",
+        "prerequisites": [
+          "Lumen's wallet ~/.aibtc/wallets.json exists (Steel Yeti, BTC bc1qndx4gheprmytf6fwhea7curqjm03v3mrk0ya03).",
+          "The wallet unlock password is stored in the credential store at id 'wallet-password'.",
+          "CREDENTIALS_PASSWORD is set in ~/.env (single-quoted value; MUST be loaded via `set -a; . ~/.env; set +a`, NOT via grep|cut which would leak literal quotes and cause decryption failures).",
+          "The working credentials skill is at ~/.claude/skills/skills-repo/credentials/credentials.ts. The top-level ~/.claude/skills/credentials/credentials.ts is broken due to a module resolution issue; do not use it.",
+          "The signing skill at ~/.claude/skills/signing/signing.ts auto-unlocks the wallet in its own process when AIBTC_WALLET_PASSWORD is set in the environment.",
+          "Bun is at ~/.bun/bin/bun (not in the default non-interactive shell PATH)."
+        ],
+        "steps": [
+          "1. Compute the current UTC timestamp in the format YYYY-MM-DDTHH-MM-SSZ (hyphens, no colons): `TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)`. Remember this value.",
+          "2. Load ~/.env so CREDENTIALS_PASSWORD is exported: `set -a && . ~/.env && set +a`.",
+          "3. Fetch the wallet password from the credential store and export it as AIBTC_WALLET_PASSWORD: `export AIBTC_WALLET_PASSWORD=\"$(cd ~/.claude/skills/skills-repo && ~/.bun/bin/bun run credentials/credentials.ts get --id wallet-password --password \"$CREDENTIALS_PASSWORD\" | jq -r .value)\"`.",
+          "4. Run the inbox skill from ~/lumen and capture stdout into a shell variable: `cd ~/lumen && OUT=$(~/.bun/bin/bun run skills/email-alb-inbox-read/email-alb-inbox-read.ts --limit 10 2>&1)`. Also capture the exit code: `EXIT=$?`.",
+          "5. Write a Markdown artifact to ~/lumen/research/${TS}_alb-inbox-dispatch-verify.md containing two sections: `## Raw Output` (the stdout captured in OUT wrapped in a fenced json code block) and `## Narrative Summary` (3-6 factual sentences: did the skill exit 0, was HTTP 200 achieved, how many messages were returned, did any match the operator's test message to steel-yeti@agentslovebitcoin.com, any anomalies). Use a heredoc so the file is produced atomically.",
+          "6. Copy the same artifact to ~/agent-runtime/state/artifacts/reports/lumen/alb-inbox-dispatch-verify.md so the runtime can surface it (create the directory if needed).",
+          "7. Unset secrets: `unset AIBTC_WALLET_PASSWORD CREDENTIALS_PASSWORD`.",
+          "8. Verify the artifact exists and prints readable content: `cat ~/lumen/research/${TS}_alb-inbox-dispatch-verify.md | head -40`.",
+          "9. Report completed with the artifact path(s) in operator_summary. Do NOT include the wallet password or CREDENTIALS_PASSWORD anywhere in operator_summary, raw_output, or artifact content."
+        ],
+        "required_artifacts": [
+          "reports/lumen/alb-inbox-dispatch-verify.md"
+        ],
+        "allowed_write_scope": [
+          "~/lumen/research/",
+          "state/artifacts/reports/lumen/"
+        ],
+        "acceptance_criteria": [
+          "Skill exits with code 0 (EXIT=0).",
+          "Raw JSON shows status: 200 from https://agentslovebitcoin.com/api/me/email/inbox.",
+          "Artifact at ~/lumen/research/<timestamp>_alb-inbox-dispatch-verify.md exists with both ## Raw Output and ## Narrative Summary sections.",
+          "Artifact at state/artifacts/reports/lumen/alb-inbox-dispatch-verify.md exists with the same content.",
+          "Neither the wallet password nor CREDENTIALS_PASSWORD appears in any artifact or operator_summary."
+        ],
+        "operator_goal": "Validate Phase 5 of the Lumen Foundation MVP via the real dispatch loop rather than human paste. Dispatch reads a backlog task, drives Codex+Qwen to fetch the wallet password from the credential store, invoke the email-alb-inbox-read skill, and produce a verification artifact. This closes Phase 5 with production infrastructure and unblocks future email-based verification experiments (GitHub signup confirmation, etc.)."
+      }
+    }
+  ]
+}

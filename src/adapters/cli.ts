@@ -5,6 +5,13 @@ import { spawn } from "node:child_process";
 import type { AgentCliAdapterConfig, AdapterExecutionResult, ExecutionRequest } from "../types";
 
 type LoadedEnv = Record<string, string>;
+type AgentCliInvocation = {
+  command: string;
+  args: string[];
+  env: LoadedEnv;
+  cwd: string;
+  inputText?: string;
+};
 
 function parseEnvFile(filePath: string): LoadedEnv {
   if (!existsSync(filePath)) {
@@ -22,7 +29,11 @@ function parseEnvFile(filePath: string): LoadedEnv {
     if (separator < 1) {
       continue;
     }
-    const key = trimmed.slice(0, separator).trim();
+    const rawKey = trimmed.slice(0, separator).trim();
+    const key = rawKey.replace(/^export\s+/, "").trim();
+    if (!key) {
+      continue;
+    }
     let value = trimmed.slice(separator + 1).trim();
     if ((value.startsWith("\"") && value.endsWith("\"")) || (value.startsWith("'") && value.endsWith("'"))) {
       value = value.slice(1, -1);
@@ -49,6 +60,39 @@ function resolveAdapterValue(
   return explicitValue ?? env[envKey] ?? fallback;
 }
 
+function getAutonomyProfile(adapter: AgentCliAdapterConfig): "restricted" | "trusted-vm" {
+  return adapter.autonomy ?? "restricted";
+}
+
+export function getDriverRequiredArgs(adapter: AgentCliAdapterConfig): string[] {
+  if (getAutonomyProfile(adapter) !== "trusted-vm") {
+    return [];
+  }
+
+  if (adapter.driver === "codex") {
+    return ["--dangerously-bypass-approvals-and-sandbox"];
+  }
+
+  if (adapter.driver === "claude-code") {
+    return [
+      "--allow-dangerously-skip-permissions",
+      "--dangerously-skip-permissions",
+      "--permission-mode",
+      "bypassPermissions"
+    ];
+  }
+
+  if (adapter.driver === "hermes-agent") {
+    return ["--yolo"];
+  }
+
+  return [];
+}
+
+function mergeArgs(requiredArgs: string[], extraArgs: string[] | undefined): string[] {
+  return [...requiredArgs, ...(Array.isArray(extraArgs) ? extraArgs : [])];
+}
+
 function buildCodexArgs(
   request: ExecutionRequest,
   adapter: AgentCliAdapterConfig,
@@ -56,8 +100,8 @@ function buildCodexArgs(
   outputLastMessagePath: string
 ): string[] {
   const model = resolveAdapterValue(adapter.model, env, "CODEX_MODEL");
-  const providerId = resolveAdapterValue(adapter.providerId, env, "CODEX_MODEL_PROVIDER_ID", "ollama_remote");
-  const providerName = resolveAdapterValue(adapter.providerName, env, "CODEX_MODEL_PROVIDER_NAME", "Ollama Remote");
+  const providerId = resolveAdapterValue(adapter.providerId, env, "CODEX_MODEL_PROVIDER_ID");
+  const providerName = resolveAdapterValue(adapter.providerName, env, "CODEX_MODEL_PROVIDER_NAME");
   const providerBaseUrl = resolveAdapterValue(adapter.providerBaseUrl, env, "CODEX_BASE_URL");
   const providerWireApi = adapter.providerWireApi ?? "responses";
   const requiresOpenAIAuth = adapter.providerRequiresOpenAIAuth ?? false;
@@ -88,19 +132,60 @@ function buildCodexArgs(
       `model_providers.${providerId}={name=${JSON.stringify(providerName)},base_url=${JSON.stringify(providerBaseUrl)},wire_api=${JSON.stringify(providerWireApi)},requires_openai_auth=${requiresOpenAIAuth}}`
     );
   }
-  if (Array.isArray(adapter.extraArgs)) {
-    args.push(...adapter.extraArgs);
-  }
 
+  args.push(...mergeArgs(getDriverRequiredArgs(adapter), adapter.extraArgs));
   args.push("-");
   return args;
+}
+
+function buildClaudeArgs(request: ExecutionRequest, adapter: AgentCliAdapterConfig): string[] {
+  const args = ["-p", "--output-format", "json"];
+
+  if (adapter.model) {
+    args.push("--model", adapter.model);
+  }
+  if (adapter.settingsFile) {
+    args.push("--settings", adapter.settingsFile);
+  }
+
+  args.push(...mergeArgs(getDriverRequiredArgs(adapter), adapter.extraArgs));
+  args.push(request.assembledContext);
+  return args;
+}
+
+function buildHermesArgs(request: ExecutionRequest, adapter: AgentCliAdapterConfig): string[] {
+  const args = ["chat", "-Q"];
+
+  if (adapter.model) {
+    args.push("--model", adapter.model);
+  }
+
+  args.push(...mergeArgs(getDriverRequiredArgs(adapter), adapter.extraArgs));
+  args.push("-q", request.assembledContext);
+  return args;
+}
+
+export function extractHermesResponseText(stdoutText: string): string {
+  const lines = stdoutText
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !line.startsWith("session_id:"));
+  const joined = lines.join("\n").trim();
+  const jsonStart = joined.indexOf("{");
+  const jsonEnd = joined.lastIndexOf("}");
+
+  if (jsonStart >= 0 && jsonEnd > jsonStart) {
+    return joined.slice(jsonStart, jsonEnd + 1);
+  }
+
+  return joined;
 }
 
 export function buildAgentCliInvocation(
   request: ExecutionRequest,
   adapter: AgentCliAdapterConfig,
   outputLastMessagePath: string
-): { command: string; args: string[]; env: LoadedEnv; cwd: string } {
+): AgentCliInvocation {
   const env = loadAdapterEnv(adapter);
   const cwd = adapter.workingDir ? path.resolve(adapter.workingDir) : process.cwd();
   const mergedAdapter = {
@@ -112,6 +197,25 @@ export function buildAgentCliInvocation(
     return {
       command: mergedAdapter.command,
       args: buildCodexArgs(request, mergedAdapter, env, outputLastMessagePath),
+      env,
+      cwd,
+      inputText: request.assembledContext
+    };
+  }
+
+  if (mergedAdapter.driver === "claude-code") {
+    return {
+      command: mergedAdapter.command,
+      args: buildClaudeArgs(request, mergedAdapter),
+      env,
+      cwd
+    };
+  }
+
+  if (mergedAdapter.driver === "hermes-agent") {
+    return {
+      command: mergedAdapter.command,
+      args: buildHermesArgs(request, mergedAdapter),
       env,
       cwd
     };
@@ -127,8 +231,8 @@ function redactEnvValue(key: string, value: string): string {
   return value;
 }
 
-function buildAuditDir(request: ExecutionRequest): string {
-  return path.join(request.runtimeConfig.artifactDir, "adapter-runs", request.task.task_id);
+export function buildAgentCliAuditDir(artifactDir: string, taskId: string, attemptId: string): string {
+  return path.join(artifactDir, "adapter-runs", taskId, attemptId);
 }
 
 function writeAuditFile(filePath: string, content: string): void {
@@ -138,7 +242,7 @@ function writeAuditFile(filePath: string, content: string): void {
 
 function writeAuditArtifacts(
   request: ExecutionRequest,
-  invocation: { command: string; args: string[]; env: LoadedEnv; cwd: string },
+  invocation: AgentCliInvocation,
   payload: {
     stdout: string;
     stderr: string;
@@ -147,7 +251,11 @@ function writeAuditArtifacts(
     note?: string;
   }
 ): Record<string, string> {
-  const auditDir = buildAuditDir(request);
+  const auditDir = buildAgentCliAuditDir(
+    request.runtimeConfig.artifactDir,
+    request.task.task_id,
+    request.attempt.attempt_id
+  );
   mkdirSync(auditDir, { recursive: true });
 
   const invocationPath = path.join(auditDir, "invocation.json");
@@ -162,6 +270,8 @@ function writeAuditArtifacts(
     JSON.stringify(
       {
         task_id: request.task.task_id,
+        attempt_id: request.attempt.attempt_id,
+        bundle_id: request.bundle.bundle_id,
         adapter_id: request.adapterId,
         driver: request.adapterConfig.mode === "agent-cli" ? request.adapterConfig.driver : "unknown",
         command: invocation.command,
@@ -193,6 +303,21 @@ function writeAuditArtifacts(
     last_message_path: lastMessagePath,
     result_path: resultPath
   };
+}
+
+function readLastMessage(
+  adapter: AgentCliAdapterConfig,
+  outputLastMessagePath: string,
+  stdoutText: string,
+  stderrText: string
+): string {
+  if (adapter.driver === "codex" && existsSync(outputLastMessagePath)) {
+    return readFileSync(outputLastMessagePath, "utf8");
+  }
+  if (adapter.driver === "hermes-agent") {
+    return extractHermesResponseText(stdoutText) || stderrText;
+  }
+  return stdoutText || stderrText;
 }
 
 export async function executeWithAgentCli(request: ExecutionRequest): Promise<AdapterExecutionResult> {
@@ -231,9 +356,7 @@ export async function executeWithAgentCli(request: ExecutionRequest): Promise<Ad
       child.kill("SIGTERM");
       const stdoutText = Buffer.concat(stdoutChunks).toString("utf8");
       const stderrText = Buffer.concat(stderrChunks).toString("utf8");
-      const lastMessage = existsSync(outputLastMessagePath)
-        ? readFileSync(outputLastMessagePath, "utf8")
-        : "";
+      const lastMessage = readLastMessage(adapter, outputLastMessagePath, stdoutText, stderrText);
       const auditPaths = writeAuditArtifacts(request, invocation, {
         stdout: stdoutText,
         stderr: stderrText,
@@ -257,7 +380,7 @@ export async function executeWithAgentCli(request: ExecutionRequest): Promise<Ad
 
     child.stdout.on("data", (chunk) => stdoutChunks.push(Buffer.from(chunk)));
     child.stderr.on("data", (chunk) => stderrChunks.push(Buffer.from(chunk)));
-    child.stdin.end(request.assembledContext);
+    child.stdin.end(invocation.inputText ?? "");
 
     child.on("error", (error) => {
       if (settled) {
@@ -294,9 +417,7 @@ export async function executeWithAgentCli(request: ExecutionRequest): Promise<Ad
       clearTimeout(timeout);
       const stdoutText = Buffer.concat(stdoutChunks).toString("utf8");
       const stderrText = Buffer.concat(stderrChunks).toString("utf8");
-      const lastMessage = existsSync(outputLastMessagePath)
-        ? readFileSync(outputLastMessagePath, "utf8")
-        : "";
+      const lastMessage = readLastMessage(adapter, outputLastMessagePath, stdoutText, stderrText);
       const result: AdapterExecutionResult = {
         rawOutput: lastMessage || stderrText || stdoutText || "",
         exitStatus: code === 0 ? "ok" : "error",
