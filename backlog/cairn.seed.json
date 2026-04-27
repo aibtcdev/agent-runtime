@@ -7,7 +7,6 @@
       "description": "Create /tmp/cairn-codex-proof/proof.txt with content ok, verify it on disk, and return completed JSON with the absolute path in file_changes.",
       "priority": 9,
       "requested_profile": "cairn",
-      "requested_adapter": "codex-ollama",
       "max_attempts": 1,
       "payload": {
         "goal": "Prove the Cairn package can execute a canonical trusted-VM task on its default adapter.",

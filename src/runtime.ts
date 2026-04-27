@@ -225,7 +225,9 @@ export async function runOnce(db: Database, config: RuntimeConfig): Promise<Reco
       return { ok: false, status: "blocked", task_id: task.task_id };
     }
 
-    const adapterId = task.requested_adapter || profile.default_adapter;
+    const adapterId = task.requested_adapter || (
+      config.adapters[profile.default_adapter] ? profile.default_adapter : config.defaultAdapter
+    );
     const adapterConfig = config.adapters[adapterId];
 
     if (!adapterConfig) {

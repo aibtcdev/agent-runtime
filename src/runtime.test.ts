@@ -1573,6 +1573,47 @@ test("runOnce creates an attempt and bundle before adapter execution and links p
   }
 });
 
+test("runOnce falls back to config default adapter when profile default is unavailable", async () => {
+  resetRuntimeForTests();
+  const config = testConfig(`/tmp/test-runtime-${Date.now()}-run-once-config-default.db`);
+  const profilePath = `/tmp/test-runtime-${Date.now()}-profile-default-missing.json`;
+  config.profiles.lumen = profilePath;
+  await Bun.write(profilePath, JSON.stringify(testProfile({ default_adapter: "missing-adapter" }), null, 2));
+  const db = openDb(config);
+
+  try {
+    const queuedTask = enqueueTask(db, config, {
+      kind: "runtime-improvement",
+      source: "operator:run-once-config-default",
+      requested_profile: "lumen",
+      payload: {}
+    });
+
+    await withMockFetch(async () =>
+      new Response(JSON.stringify({
+        response: JSON.stringify({
+          status: "completed",
+          operator_summary: "executed with config default",
+          machine_status: "ok"
+        })
+      }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      }),
+    async () => {
+      const result = await runOnce(db, config);
+      const attempt = getTaskAttemptsForTask(db, queuedTask.task_id)[0];
+
+      expect(result.ok).toBeTrue();
+      expect(result.status).toBe("completed");
+      expect(attempt.adapter_id).toBe("ollama-qwen");
+    });
+  } finally {
+    db.close(false);
+    await rm(profilePath, { force: true });
+  }
+});
+
 test("runOnce blocks the task and does not launch the adapter when bundle compilation fails", async () => {
   resetRuntimeForTests();
   const config = testConfig(`/tmp/test-runtime-${Date.now()}-run-once-bundle-fail.db`);
