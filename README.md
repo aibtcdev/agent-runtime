@@ -150,6 +150,17 @@ LAN API surfaces:
 - `/api/stream` live SSE updates
 - `/artifacts`, `/snapshots` browser-readable JSON views for runtime inspection
 
+Optional LAN fleet UI lives in the separate `aibtcdev/agent-runtime-ui` repo and can proxy multiple hosts that expose this API:
+
+```bash
+# git clone git@github.com:aibtcdev/agent-runtime-ui.git ~/agent-runtime-ui
+# cd ~/agent-runtime-ui
+# cp config/fleet.example.json config/fleet.json
+# cp deploy/systemd/agent-runtime-ui.service ~/.config/systemd/user/
+# systemctl --user daemon-reload
+# systemctl --user enable --now agent-runtime-ui.service
+```
+
 Queue a Lumen GitHub task through the thin bridge:
 
 ```bash
