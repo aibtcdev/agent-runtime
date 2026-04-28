@@ -55,7 +55,17 @@ export type AgentCliAdapterConfig = {
   autonomy?: "restricted" | "trusted-vm";
 };
 
-export type AdapterConfig = OllamaGenerateAdapterConfig | AgentCliAdapterConfig;
+export type ScriptAdapterConfig = {
+  mode: "script";
+  command: string;
+  timeoutMs: number;
+  workingDir?: string;
+  envFile?: string;
+  env?: Record<string, string>;
+  extraArgs?: string[];
+};
+
+export type AdapterConfig = OllamaGenerateAdapterConfig | AgentCliAdapterConfig | ScriptAdapterConfig;
 
 export type Profile = {
   profile_id: string;

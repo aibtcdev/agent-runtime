@@ -560,9 +560,14 @@ export async function compileBundle(input: CompileBundleInput): Promise<{
               sandbox: input.adapterConfig.sandbox ?? null,
               extra_args: input.adapterConfig.extraArgs ?? []
             }
-          : {
+          : input.adapterConfig.mode === "ollama-generate"
+            ? {
               endpoint: input.adapterConfig.endpoint
             }
+            : {
+                command: input.adapterConfig.command,
+                extra_args: input.adapterConfig.extraArgs ?? []
+              }
     },
     workspace,
     artifacts,

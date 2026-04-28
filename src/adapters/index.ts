@@ -3,6 +3,7 @@ import type { RuntimeConfig } from "../types";
 import type { ExecutionRequest, AdapterExecutionResult } from "../types";
 import { executeWithOllama } from "./ollama";
 import { executeWithAgentCli, getDriverRequiredArgs } from "./cli";
+import { executeWithScript } from "./script";
 
 type AdapterHealth = {
   adapterId: string;
@@ -66,6 +67,22 @@ export async function healthcheckAdapter(adapterId: string, config: RuntimeConfi
     };
   }
 
+  if (adapter.mode === "script") {
+    const commandPath = Bun.which(adapter.command);
+    return {
+      adapterId,
+      ok: Boolean(commandPath),
+      detail: {
+        command: adapter.command,
+        command_path: commandPath ?? null,
+        env_file: adapter.envFile ?? null,
+        env_file_exists: adapter.envFile ? existsSync(adapter.envFile) : null,
+        working_dir: adapter.workingDir ?? null,
+        extra_args: adapter.extraArgs ?? []
+      }
+    };
+  }
+
   return {
     adapterId,
     ok: false,
@@ -82,6 +99,9 @@ export async function executeWithAdapter(request: ExecutionRequest): Promise<Ada
   }
   if (request.adapterConfig.mode === "agent-cli") {
     return executeWithAgentCli(request);
+  }
+  if (request.adapterConfig.mode === "script") {
+    return executeWithScript(request);
   }
   return {
     rawOutput: `Unsupported adapter mode: ${(request.adapterConfig as { mode?: string }).mode ?? "unknown"}`,

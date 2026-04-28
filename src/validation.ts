@@ -509,6 +509,19 @@ export async function validateRuntimeConfig(config: RuntimeConfig): Promise<stri
       continue;
     }
 
+    if (adapter.mode === "script") {
+      if (!adapter.command.trim()) {
+        issues.push(`script command missing for ${adapterId}`);
+      }
+      if (adapter.timeoutMs < 1000) {
+        issues.push(`script adapter timeout too low for ${adapterId}`);
+      }
+      if (adapter.envFile && !existsSync(adapter.envFile)) {
+        issues.push(`script adapter envFile missing for ${adapterId}: ${adapter.envFile}`);
+      }
+      continue;
+    }
+
     issues.push(`unsupported adapter mode for ${adapterId}`);
   }
 

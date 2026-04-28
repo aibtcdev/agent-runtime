@@ -1614,6 +1614,54 @@ test("runOnce falls back to config default adapter when profile default is unava
   }
 });
 
+test("runOnce executes script adapters through the task attempt path", async () => {
+  resetRuntimeForTests();
+  const config = testConfig(`/tmp/test-runtime-${Date.now()}-run-once-script.db`);
+  config.defaultAdapter = "script-echo";
+  config.adapters["script-echo"] = {
+    mode: "script",
+    command: "bun",
+    timeoutMs: 60000,
+    workingDir: path.dirname(config.dbPath),
+    extraArgs: [
+      "-e",
+      "console.log(JSON.stringify({status:'completed',machine_status:'ok',operator_summary:'script ok',file_changes:[],artifact_paths:[],follow_up_tasks:[],external_messages:[]}))"
+    ]
+  };
+  const profilePath = `/tmp/test-runtime-${Date.now()}-script-profile.json`;
+  config.profiles.lumen = profilePath;
+  await Bun.write(profilePath, JSON.stringify(testProfile({ default_adapter: "script-echo" }), null, 2));
+  const db = openDb(config);
+
+  try {
+    const queuedTask = enqueueTask(db, config, {
+      kind: "heartbeat",
+      source: "operator:script-heartbeat-test",
+      requested_profile: "lumen",
+      payload: {
+        args: ["unused-task-arg"]
+      }
+    });
+
+    const result = await runOnce(db, config);
+    const task = getTaskById(db, queuedTask.task_id);
+    const attempt = getTaskAttemptsForTask(db, queuedTask.task_id)[0];
+
+    expect(result.ok).toBeTrue();
+    expect(result.status).toBe("completed");
+    expect(task?.status).toBe("completed");
+    expect(task?.outcome?.operator_summary).toBe("script ok");
+    expect(attempt.adapter_id).toBe("script-echo");
+    expect(attempt.adapter_kind).toBe("script");
+    expect(attempt.stdout_path).not.toBeNull();
+    expect(attempt.result_path).not.toBeNull();
+    expect(await Bun.file(attempt.stdout_path!).text()).toContain("script ok");
+  } finally {
+    db.close(false);
+    await rm(profilePath, { force: true });
+  }
+});
+
 test("runOnce blocks the task and does not launch the adapter when bundle compilation fails", async () => {
   resetRuntimeForTests();
   const config = testConfig(`/tmp/test-runtime-${Date.now()}-run-once-bundle-fail.db`);

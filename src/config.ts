@@ -96,7 +96,7 @@ async function loadConfigFileTree(configPath: string, seen = new Set<string>()):
 }
 
 function normalizeAdapter(baseDir: string, adapter: RuntimeConfig["adapters"][string]): RuntimeConfig["adapters"][string] {
-  if (adapter.mode !== "agent-cli") {
+  if (adapter.mode !== "agent-cli" && adapter.mode !== "script") {
     return adapter;
   }
   const cliAdapter = adapter as AgentCliAdapterConfig;
