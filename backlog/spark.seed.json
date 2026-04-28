@@ -1,0 +1,48 @@
+{
+  "tasks": [
+    {
+      "kind": "adapter-proof",
+      "source": "operator:spark-seed:claude-proof",
+      "subject": "Canonical Spark Claude subscription proof",
+      "description": "Create /tmp/spark-claude-proof/proof.txt with content ok, verify it on disk, and return completed JSON with the absolute path in file_changes.",
+      "priority": 9,
+      "requested_profile": "spark",
+      "max_attempts": 1,
+      "payload": {
+        "goal": "Prove Spark can execute a canonical trusted-VM task on its default Claude subscription adapter.",
+        "proof_path": "/tmp/spark-claude-proof/proof.txt",
+        "proof_contents": "ok"
+      }
+    },
+    {
+      "kind": "base-readiness",
+      "source": "operator:spark-seed:base-readiness",
+      "subject": "Produce Spark base-agent readiness report",
+      "description": "Inspect Spark runtime config and host prerequisites. Produce a report covering credential store, wallet skill, AIBTC identity, heartbeat, services, and fleet UI readiness without printing secrets.",
+      "priority": 7,
+      "requested_profile": "spark",
+      "payload": {
+        "agent": "spark",
+        "checklist": "deploy/BASE_AGENT_CHECKLIST.md",
+        "required_artifacts": [
+          "reports/spark/base-readiness.md"
+        ],
+        "operator_goal": "Determine exactly what remains before Spark can be promoted to the base sibling-agent standard."
+      }
+    },
+    {
+      "kind": "heartbeat",
+      "source": "operator:spark-seed:aibtc-heartbeat",
+      "subject": "Run Spark AIBTC heartbeat through dispatch",
+      "description": "Run the heartbeat script adapter. If host heartbeat is not configured yet, record the blocked prerequisite as the task outcome.",
+      "priority": 5,
+      "requested_profile": "spark",
+      "requested_adapter": "aibtc-heartbeat",
+      "max_attempts": 1,
+      "payload": {
+        "goal": "Prove heartbeat is represented as a normal dispatch task with a script adapter attempt.",
+        "args": []
+      }
+    }
+  ]
+}

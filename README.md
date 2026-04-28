@@ -13,6 +13,7 @@ This proof keeps the runtime intentionally small:
 - LAN web/API operator visibility
 
 Shared `agent-cli` driver support now exists for `codex`, `claude-code`, and `hermes-agent`. The current live Lumen proving config still enables only `ollama-generate` plus `codex` until the Claude and Hermes launch contracts are pinned per host.
+The `script` adapter mode is also first-class for deterministic work such as AIBTC heartbeat, so those checks flow through the same task, attempt, SQLite, and audit-artifact path as model-backed dispatch.
 
 The CLI is the primary agent execution surface: dispatch cycles, health checks, workflow transitions, and bridge intake run through `src/cli.ts`. The web server is the v1 LAN coordination surface for humans and sibling agents on the same private network. It exposes runtime state, tasks, events, artifacts, snapshots, and a bounded operator task queue endpoint.
 
@@ -119,6 +120,7 @@ Lumen proving deploy artifacts:
 ```text
 deploy/lumen/runtime.lumen.json
 deploy/lumen/DEPLOY.md
+deploy/BASE_AGENT_CHECKLIST.md
 deploy/systemd/agent-runtime-run-once@.service
 deploy/systemd/agent-runtime-dispatch@.timer
 deploy/systemd/agent-runtime-operator@.service

@@ -1,0 +1,36 @@
+{
+  "runtimeName": "spark",
+  "runtimePolicy": "You are Spark, a Claude Code subscription-backed sibling agent focused on implementation, runtime migration, and concrete verification evidence.",
+  "stateDir": "./state",
+  "logDir": "./state/logs",
+  "artifactDir": "./state/artifacts",
+  "dbPath": "./state/runtime.db",
+  "lockPath": "./state/dispatch.lock",
+  "defaultProfile": "spark",
+  "defaultAdapter": "claude-subscription",
+  "maxAttempts": 3,
+  "retryBackoffSeconds": 60,
+  "profiles": {
+    "spark": "../../profiles/spark/profile.json",
+    "proving-claude": "../../profiles/proving-claude/profile.json",
+    "proving-codex": "../../profiles/proving-codex/profile.json"
+  },
+  "adapters": {
+    "claude-subscription": {
+      "mode": "agent-cli",
+      "driver": "claude-code",
+      "command": "/home/dev/.local/bin/claude",
+      "timeoutMs": 900000,
+      "workingDir": "../..",
+      "settingsFile": "/home/dev/.claude/settings.json",
+      "autonomy": "trusted-vm"
+    },
+    "aibtc-heartbeat": {
+      "mode": "script",
+      "command": "../../scripts/aibtc-heartbeat-wrapper.sh",
+      "timeoutMs": 60000,
+      "workingDir": "../..",
+      "envFile": "/home/dev/.config/agent-runtime/spark.heartbeat.env"
+    }
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "extends": "/home/dev/agent-runtime/deploy/forge/runtime.forge.json",
+  "defaultAdapter": "hermes-openrouter",
+  "adapters": {
+    "hermes-openrouter": {
+      "mode": "agent-cli",
+      "driver": "hermes-agent",
+      "command": "/home/dev/.local/bin/hermes",
+      "model": "openrouter/auto",
+      "timeoutMs": 900000,
+      "workingDir": "/home/dev/agent-runtime",
+      "envFile": "/home/dev/.config/agent-runtime/forge.hermes.env",
+      "autonomy": "trusted-vm"
+    },
+    "aibtc-heartbeat": {
+      "mode": "script",
+      "command": "/home/dev/agent-runtime/scripts/aibtc-heartbeat-wrapper.sh",
+      "timeoutMs": 60000,
+      "workingDir": "/home/dev/agent-runtime",
+      "envFile": "/home/dev/.config/agent-runtime/forge.heartbeat.env"
+    }
+  }
+}

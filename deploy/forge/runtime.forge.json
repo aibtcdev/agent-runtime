@@ -1,0 +1,37 @@
+{
+  "runtimeName": "forge",
+  "runtimePolicy": "You are Forge, a Hermes/OpenRouter sibling agent focused on adapter parity, execution diversity, and concrete runtime evidence.",
+  "stateDir": "./state",
+  "logDir": "./state/logs",
+  "artifactDir": "./state/artifacts",
+  "dbPath": "./state/runtime.db",
+  "lockPath": "./state/dispatch.lock",
+  "defaultProfile": "forge",
+  "defaultAdapter": "hermes-openrouter",
+  "maxAttempts": 3,
+  "retryBackoffSeconds": 60,
+  "profiles": {
+    "forge": "../../profiles/forge/profile.json",
+    "proving-claude": "../../profiles/proving-claude/profile.json",
+    "proving-codex": "../../profiles/proving-codex/profile.json"
+  },
+  "adapters": {
+    "hermes-openrouter": {
+      "mode": "agent-cli",
+      "driver": "hermes-agent",
+      "command": "/home/dev/.local/bin/hermes",
+      "model": "openrouter/auto",
+      "timeoutMs": 900000,
+      "workingDir": "../..",
+      "envFile": "/home/dev/.config/agent-runtime/forge.hermes.env",
+      "autonomy": "trusted-vm"
+    },
+    "aibtc-heartbeat": {
+      "mode": "script",
+      "command": "../../scripts/aibtc-heartbeat-wrapper.sh",
+      "timeoutMs": 60000,
+      "workingDir": "../..",
+      "envFile": "/home/dev/.config/agent-runtime/forge.heartbeat.env"
+    }
+  }
+}

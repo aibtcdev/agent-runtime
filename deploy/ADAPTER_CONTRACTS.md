@@ -22,7 +22,7 @@ Required behavior:
 
 Current required args by driver:
 
-- `codex`: `--yolo`
+- `codex`: `--dangerously-bypass-approvals-and-sandbox`
 - `claude-code`: `--allow-dangerously-skip-permissions --dangerously-skip-permissions --permission-mode bypassPermissions`
 - `hermes-agent`: `--yolo`
 
@@ -30,10 +30,28 @@ Current required args by driver:
 
 | Driver | Runtime adapter mode | Intended role today | Required host inputs | Required args in `trusted-vm` | Output handling |
 | --- | --- | --- | --- | --- | --- |
-| `codex` | `agent-cli` | repo edits, implementation, artifact-oriented tasks | command path, model/provider wiring, optional env file | `--yolo` | Codex `--output-last-message` file |
+| `codex` | `agent-cli` | repo edits, implementation, artifact-oriented tasks | command path, model/provider wiring, optional env file | `--dangerously-bypass-approvals-and-sandbox` | Codex `--output-last-message` file |
 | `claude-code` | `agent-cli` | supervised operator/repo tasks with Claude CLI posture | command path, env file, settings file | `--allow-dangerously-skip-permissions --dangerously-skip-permissions --permission-mode bypassPermissions` | CLI JSON result payload |
 | `hermes-agent` | `agent-cli` | terminal-heavy execution with Hermes tools | command path, model config in host Hermes setup | `--yolo` | `chat -Q` plus session-metadata stripping |
 | `ollama-generate` | `ollama-generate` | proving-only raw model adapter | endpoint and model | none | raw JSON/text normalization |
+| `script` | `script` | deterministic or repetitive work such as AIBTC heartbeat | command path, optional env file, optional extra args | none | stdout/stderr/result artifacts plus canonical JSON normalization |
+
+## Script Adapter Contract
+
+Use `script` for work that should flow through dispatch but does not need model reasoning. The runtime claims the task, creates a normal attempt row, writes the same audit bundle shape as CLI adapters, and records stdout, stderr, result JSON, retry class, and task outcome in SQLite.
+
+The adapter passes these runtime environment variables to the script:
+
+- `AGENT_RUNTIME_NAME`
+- `AGENT_RUNTIME_TASK_ID`
+- `AGENT_RUNTIME_ATTEMPT_ID`
+- `AGENT_RUNTIME_ARTIFACT_DIR`
+- `AGENT_RUNTIME_STATE_DIR`
+- `AGENT_RUNTIME_TASK_PAYLOAD_JSON`
+
+Task payload `args` are appended after adapter `extraArgs` when `args` is a string array. Scripts should print canonical runtime JSON when practical. Non-JSON output is still captured and normalized, but heartbeat and other operational checks should prefer canonical JSON for cleaner history.
+
+AIBTC heartbeat should use this mode. It must not run as an untracked sidecar cron if the goal is to preserve the same task, attempt, retry, log, and troubleshooting history as model-backed work.
 
 ## Host-Local Wiring
 

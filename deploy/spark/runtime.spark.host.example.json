@@ -1,0 +1,22 @@
+{
+  "extends": "/home/dev/agent-runtime/deploy/spark/runtime.spark.json",
+  "defaultAdapter": "claude-subscription",
+  "adapters": {
+    "claude-subscription": {
+      "mode": "agent-cli",
+      "driver": "claude-code",
+      "command": "/home/dev/.local/bin/claude",
+      "timeoutMs": 900000,
+      "workingDir": "/home/dev/agent-runtime",
+      "settingsFile": "/home/dev/.claude/settings.json",
+      "autonomy": "trusted-vm"
+    },
+    "aibtc-heartbeat": {
+      "mode": "script",
+      "command": "/home/dev/agent-runtime/scripts/aibtc-heartbeat-wrapper.sh",
+      "timeoutMs": 60000,
+      "workingDir": "/home/dev/agent-runtime",
+      "envFile": "/home/dev/.config/agent-runtime/spark.heartbeat.env"
+    }
+  }
+}
