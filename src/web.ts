@@ -17,7 +17,10 @@ import {
 } from "./db";
 import { readDispatchPause, writeDispatchPause } from "./pause";
 import { createSnapshotReport, readSnapshot } from "./report";
-import type { RunEventRecord, RuntimeConfig, RuntimeSnapshot, TaskRecord } from "./types";
+import { enqueueDueSchedules, getAllSchedules, upsertRecurringSchedule } from "./schedules";
+import { getRecentSensorEvents } from "./sensor-events";
+import { processSensorEvent } from "./sensors";
+import type { RunEventRecord, RuntimeConfig, RuntimeSnapshot, SensorEventInput, TaskRecord } from "./types";
 
 const MIME_TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -304,6 +307,26 @@ async function setPauseState(req: Request, db: Database, config: RuntimeConfig):
   return jsonResponse({ ok: true, ...state });
 }
 
+async function upsertScheduleFromRequest(req: Request, db: Database): Promise<Response> {
+  try {
+    const body = await req.json();
+    const schedule = upsertRecurringSchedule(db, body);
+    return jsonResponse({ ok: true, schedule }, 201);
+  } catch (error) {
+    return jsonResponse({ error: error instanceof Error ? error.message : "schedule upsert failed" }, 400);
+  }
+}
+
+async function ingestSensorEventFromRequest(req: Request, db: Database, config: RuntimeConfig): Promise<Response> {
+  try {
+    const body = await req.json() as SensorEventInput;
+    const result = processSensorEvent(db, config, body);
+    return jsonResponse(result, result.accepted ? 201 : 200);
+  } catch (error) {
+    return jsonResponse({ error: error instanceof Error ? error.message : "sensor event ingestion failed" }, 400);
+  }
+}
+
 function recordPauseEvent(db: Database, paused: boolean, reason: string | null): void {
   const eventType = paused ? "dispatch_pause_enabled" : "dispatch_pause_cleared";
   recordEvent(db, eventType, null, { reason });
@@ -378,6 +401,36 @@ async function main(): Promise<void> {
 
       if (url.pathname === "/api/workflows") {
         return jsonResponse({ workflows: getAllWorkflows(db).map(normalizeWorkflow) });
+      }
+
+      if (url.pathname === "/api/schedules") {
+        if (req.method === "GET") {
+          return jsonResponse({ schedules: getAllSchedules(db) });
+        }
+        if (req.method === "POST") {
+          return upsertScheduleFromRequest(req, db);
+        }
+        return methodNotSupported(req.method);
+      }
+
+      if (url.pathname === "/api/schedules/tick") {
+        if (req.method !== "POST") {
+          return methodNotSupported(req.method);
+        }
+        const body = await req.json().catch(() => ({})) as Record<string, unknown>;
+        const atIso = typeof body.at === "string" ? new Date(body.at).toISOString() : undefined;
+        return jsonResponse(enqueueDueSchedules(db, config, atIso));
+      }
+
+      if (url.pathname === "/api/sensors/events") {
+        if (req.method === "GET") {
+          const limit = Number(url.searchParams.get("limit") || "50");
+          return jsonResponse({ events: getRecentSensorEvents(db, limit) });
+        }
+        if (req.method === "POST") {
+          return ingestSensorEventFromRequest(req, db, config);
+        }
+        return methodNotSupported(req.method);
       }
 
       if (url.pathname === "/api/tasks/queue") {

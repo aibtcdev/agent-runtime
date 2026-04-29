@@ -32,6 +32,9 @@ import { buildAgentCliAuditDir, buildAgentCliInvocation, extractHermesResponseTe
 import { loadConfig } from "./config";
 import { resetRuntimeForTests, runOnce } from "./runtime";
 import { readDispatchPause, writeDispatchPause } from "./pause";
+import { processSensorEvent } from "./sensors";
+import { enqueueDueSchedules, getScheduleByName, upsertRecurringSchedule } from "./schedules";
+import { getAppliedSchemaMigrations } from "./migrations";
 
 test("normalizeCanonicalOutcome filters malformed arrays and invalid follow-up tasks", () => {
   const outcome = normalizeCanonicalOutcome(JSON.stringify({
@@ -589,6 +592,90 @@ test("enqueueTaskIfNew allows a new task after the prior source finished", () =>
 
     expect(second).not.toBeNull();
     expect(second?.task_id).not.toBe(first.task_id);
+  } finally {
+    db.close(false);
+  }
+});
+
+test("enqueueTask supports relative future scheduling through available_at", () => {
+  const config = testConfig();
+  const db = openDb(config);
+  try {
+    const task = enqueueTask(db, config, {
+      kind: "future-check",
+      source: "operator:future-check",
+      payload: { ok: true },
+      schedule: { delay_minutes: 15 }
+    });
+
+    expect(new Date(task.available_at).getTime()).toBeGreaterThan(Date.now() + 14 * 60_000);
+    expect(claimNextTask(db, "runner")).toBeNull();
+  } finally {
+    db.close(false);
+  }
+});
+
+test("recurring schedule tick enqueues due tasks and advances next run", () => {
+  const config = testConfig();
+  const db = openDb(config);
+  try {
+    const schedule = upsertRecurringSchedule(db, {
+      name: "aibtc-checkin",
+      interval_seconds: 3600,
+      next_run_at: "2026-04-29T10:00:00Z",
+      task: {
+        kind: "aibtc-checkin",
+        source: "schedule:aibtc-checkin",
+        subject: "AIBTC check-in",
+        requested_adapter: "ollama-qwen",
+        payload: { check: "heartbeat" }
+      }
+    });
+
+    const result = enqueueDueSchedules(db, config, "2026-04-29T10:05:00Z");
+    const updated = getScheduleByName(db, "aibtc-checkin");
+    const claimed = claimNextTask(db, "runner");
+
+    expect(schedule.name).toBe("aibtc-checkin");
+    expect(result.schedulesEvaluated).toBe(1);
+    expect(result.tasksCreated).toBe(1);
+    expect(claimed?.task.kind).toBe("aibtc-checkin");
+    expect(claimed?.task.source).toBe("schedule:aibtc-checkin:2026-04-29T10:00:00.000Z");
+    expect(updated?.next_run_at).toBe("2026-04-29T11:00:00.000Z");
+  } finally {
+    db.close(false);
+  }
+});
+
+test("sensor event intake dedupes events and can create a workflow", () => {
+  const config = testConfig();
+  const db = openDb(config);
+  try {
+    const event = {
+      sensor_id: "discord-mentions",
+      event_id: "mention-1",
+      observed_at: "2026-04-29T10:00:00Z",
+      source_ref: "discord://channel/message",
+      dedupe_key: "discord:mention-1",
+      payload: { text: "please investigate" },
+      proposed_workflow: {
+        template: "goal-loop",
+        instance_key: "sensor-goal-loop-1",
+        context: {
+          summary: "Investigate Discord mention",
+          objective: "Respond to the external request with evidence"
+        }
+      }
+    };
+
+    const first = processSensorEvent(db, config, event);
+    const second = processSensorEvent(db, config, event);
+    const workflow = getWorkflowByInstanceKey(db, "sensor-goal-loop-1");
+
+    expect(first.accepted).toBeTrue();
+    expect(first.workflow_id).toBe(workflow?.id ?? null);
+    expect(second.accepted).toBeFalse();
+    expect(workflow?.current_state).toBe("plan");
   } finally {
     db.close(false);
   }
@@ -1987,6 +2074,23 @@ test("openDb migrates legacy run_events schemas before creating attempt-aware in
     expect(runEventColumns.some((column) => column.name === "attempt_id")).toBeTrue();
     expect(runEventIndexes.some((index) => index.name === "idx_run_events_task_attempt")).toBeTrue();
     expect(taskAttemptColumns.some((column) => column.name === "attempt_id")).toBeTrue();
+  } finally {
+    db.close(false);
+  }
+});
+
+test("openDb records applied schema migrations and creates schedule sensor tables", () => {
+  const config = testConfig(`/tmp/test-runtime-${Date.now()}-schema-migrations.db`);
+  const db = openDb(config);
+  try {
+    const migrations = getAppliedSchemaMigrations(db);
+    const scheduleColumns = db.query("PRAGMA table_info(schedules)").all() as Array<{ name: string }>;
+    const sensorColumns = db.query("PRAGMA table_info(sensor_events)").all() as Array<{ name: string }>;
+
+    expect(migrations.map((migration) => migration.id)).toContain("0001_runtime_core");
+    expect(migrations.map((migration) => migration.id)).toContain("0002_schedules_and_sensor_events");
+    expect(scheduleColumns.some((column) => column.name === "schedule_id")).toBeTrue();
+    expect(sensorColumns.some((column) => column.name === "sensor_event_id")).toBeTrue();
   } finally {
     db.close(false);
   }

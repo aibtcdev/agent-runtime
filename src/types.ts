@@ -93,6 +93,10 @@ export type TaskInput = {
   requested_profile?: string;
   requested_adapter?: string;
   max_attempts?: number;
+  available_at?: string;
+  schedule?: {
+    delay_minutes?: number;
+  };
 };
 
 export type TaskRecord = {
@@ -203,6 +207,56 @@ export type Workflow = {
   created_at: string;
   updated_at: string;
   completed_at: string | null;
+};
+
+export type RecurringScheduleInput = {
+  schedule_id?: string;
+  name: string;
+  interval_seconds: number;
+  task: TaskInput;
+  next_run_at?: string;
+  enabled?: boolean;
+};
+
+export type RecurringScheduleRecord = {
+  schedule_id: string;
+  name: string;
+  enabled: boolean;
+  interval_seconds: number;
+  next_run_at: string;
+  last_run_at: string | null;
+  task: TaskInput;
+  created_at: string;
+  updated_at: string;
+};
+
+export type SensorEventInput = {
+  sensor_id: string;
+  event_id: string;
+  observed_at?: string;
+  source_ref: string;
+  dedupe_key: string;
+  payload: Record<string, unknown>;
+  proposed_task?: TaskInput;
+  proposed_workflow?: {
+    template: string;
+    instance_key: string;
+    state?: string;
+    context?: Record<string, unknown>;
+  };
+};
+
+export type SensorEventRecord = {
+  sensor_event_id: string;
+  sensor_id: string;
+  event_id: string;
+  observed_at: string;
+  source_ref: string;
+  dedupe_key: string;
+  payload: Record<string, unknown>;
+  task_id: string | null;
+  workflow_id: number | null;
+  created_at: string;
 };
 
 export type WorkflowAction = {

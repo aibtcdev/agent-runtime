@@ -20,6 +20,8 @@ import { getAllowedTransitions, getTemplateByName } from "./workflows";
 import type { TaskInput } from "./types";
 import { writeSnapshot } from "./snapshot";
 import { createSnapshotReport } from "./report";
+import { processSensorEvent } from "./sensors";
+import { enqueueDueSchedules, upsertRecurringSchedule } from "./schedules";
 
 function parseArgs(args: string[]): Record<string, string | boolean> {
   const result: Record<string, string | boolean> = {};
@@ -111,7 +113,39 @@ async function main(): Promise<void> {
       case "intake": {
         const taskInput = await readTaskInput(flags);
         const task = enqueueTask(db, config, taskInput);
-        console.log(JSON.stringify({ queued: true, task_id: task.task_id, profile: task.requested_profile }, null, 2));
+        console.log(JSON.stringify({ queued: true, task_id: task.task_id, profile: task.requested_profile, available_at: task.available_at }, null, 2));
+        break;
+      }
+      case "schedule-create": {
+        const input = typeof flags.json === "string"
+          ? JSON.parse(flags.json)
+          : typeof flags.file === "string"
+            ? await Bun.file(flags.file).json()
+            : null;
+        if (!input) {
+          throw new Error("Provide --json '<schedule>' or --file path/to/schedule.json");
+        }
+        const schedule = upsertRecurringSchedule(db, input);
+        console.log(JSON.stringify({ upserted: true, schedule }, null, 2));
+        break;
+      }
+      case "schedule-tick": {
+        const at = typeof flags.at === "string" ? new Date(flags.at).toISOString() : undefined;
+        const result = enqueueDueSchedules(db, config, at);
+        console.log(JSON.stringify(result, null, 2));
+        break;
+      }
+      case "sensor-event": {
+        const input = typeof flags.json === "string"
+          ? JSON.parse(flags.json)
+          : typeof flags.file === "string"
+            ? await Bun.file(flags.file).json()
+            : null;
+        if (!input) {
+          throw new Error("Provide --json '<sensor-event>' or --file path/to/sensor-event.json");
+        }
+        const result = processSensorEvent(db, config, input);
+        console.log(JSON.stringify(result, null, 2));
         break;
       }
       case "run-once": {
@@ -256,7 +290,7 @@ async function main(): Promise<void> {
         break;
       }
       default: {
-        console.error("Usage: bun run src/cli.ts <intake|run-once|status|bridge-github|bridge-discord|healthcheck|workflow-list|workflow-show|workflow-create|workflow-transition|workflow-complete|snapshot|seed-backlog|report> [--config path] [--json task-json | --file task.json]");
+        console.error("Usage: bun run src/cli.ts <intake|schedule-create|schedule-tick|sensor-event|run-once|status|bridge-github|bridge-discord|healthcheck|workflow-list|workflow-show|workflow-create|workflow-transition|workflow-complete|snapshot|seed-backlog|report> [--config path] [--json json | --file path]");
         process.exitCode = 1;
       }
     }

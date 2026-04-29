@@ -16,6 +16,7 @@ import {
   rescheduleTaskAttempt,
   updateAttemptAdapter
 } from "./db";
+import { enqueueDueSchedules } from "./schedules";
 import type { CanonicalOutcome, TaskAttemptRecord, RuntimeConfig } from "./types";
 import { normalizeCanonicalOutcome, verifyCompletedTaskOutcome, verifyTaskInputArtifacts } from "./validation";
 import { evaluateActiveWorkflows } from "./workflow-runtime";
@@ -158,6 +159,15 @@ export async function runOnce(db: Database, config: RuntimeConfig): Promise<Reco
     if (!bootPrepared) {
       reclaimRunningWorkOnBoot(db, runtimeSession.runnerId);
       bootPrepared = true;
+    }
+
+    const scheduleResult = enqueueDueSchedules(db, config);
+    if (scheduleResult.schedulesEvaluated > 0) {
+      await appendLog(config, {
+        event: "schedule_evaluation",
+        schedules_evaluated: scheduleResult.schedulesEvaluated,
+        tasks_created: scheduleResult.tasksCreated
+      });
     }
 
     const workflowResult = evaluateActiveWorkflows(db, config);

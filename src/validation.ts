@@ -18,6 +18,12 @@ function normalizeTaskInput(value: unknown): TaskInput | null {
     source: value.source,
     payload: value.payload
   };
+  if (typeof value.subject === "string") {
+    normalized.subject = value.subject;
+  }
+  if (typeof value.description === "string") {
+    normalized.description = value.description;
+  }
   if (typeof value.priority === "number") {
     normalized.priority = value.priority;
   }
@@ -29,6 +35,15 @@ function normalizeTaskInput(value: unknown): TaskInput | null {
   }
   if (typeof value.max_attempts === "number") {
     normalized.max_attempts = value.max_attempts;
+  }
+  if (typeof value.available_at === "string") {
+    normalized.available_at = value.available_at;
+  }
+  if (isObject(value.schedule)) {
+    const delayMinutes = value.schedule.delay_minutes;
+    if (typeof delayMinutes === "number") {
+      normalized.schedule = { delay_minutes: delayMinutes };
+    }
   }
   return normalized;
 }

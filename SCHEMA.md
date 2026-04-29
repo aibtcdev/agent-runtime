@@ -308,7 +308,13 @@ type SensorEvent = {
   dedupe_key: string;
   freshness_deadline?: string;
   payload: Record<string, unknown>;
-  proposed_task: TaskIntent;
+  proposed_task?: TaskIntent;
+  proposed_workflow?: {
+    template: string;
+    instance_key: string;
+    state?: string;
+    context?: Record<string, unknown>;
+  };
 };
 ```
 
@@ -316,6 +322,7 @@ Invariants:
 
 - `dedupe_key` is sensor-owned and stable.
 - Sensors enqueue tasks only when freshness and trigger conditions are satisfied.
+- Sensors may create or wake workflows, but workflow state owns dependent task progression.
 
 ## 6. Task Intent
 
@@ -340,6 +347,7 @@ type TaskIntent = {
   schedule?: {
     delay_minutes: number;
   };
+  available_at?: string;
   payload: Record<string, unknown>;
   evidence_requirements?: {
     required_artifacts?: string[];
@@ -354,6 +362,7 @@ Invariants:
 - `requested_model` is explicit when a task needs a specific model.
 - `priority` affects queue order only and must not silently choose a model.
 - Scheduling stays simple and relative through `delay_minutes`, not calendar complexity.
+- Absolute `available_at` is accepted by the runtime for trusted operator/runtime callers; portable sensors should prefer relative delay.
 
 ## 7. Task Record
 
@@ -496,6 +505,31 @@ Invariants:
 - Workflows are first-class because they are useful for multi-step processes where one verified task intentionally creates the next.
 - Workflow progression is driven by recorded signals and runtime-applied follow-up creation, not by narration alone.
 
+## 11b. Recurring Schedule Record
+
+Recurring schedules are runtime-owned rows that enqueue normal task intents. They decide when work should exist; they do not execute work directly.
+
+```ts
+type RecurringScheduleRecord = {
+  schedule_id: string;
+  name: string;
+  enabled: boolean;
+  interval_seconds: number;
+  next_run_at: string;
+  last_run_at: string | null;
+  task: TaskIntent;
+  created_at: string;
+  updated_at: string;
+};
+```
+
+Invariants:
+
+- Dispatch evaluates due schedules before workflow evaluation and task claiming.
+- Each due run is enqueued as a normal task with an `available_at` gate and a schedule-derived source key.
+- Recurring schedules are for consistency, not dependency management; dependent progression remains workflow-owned.
+- Catch-up is coalesced: one schedule evaluation creates at most one task per due schedule, then advances from the prior due time by one interval. Repeated evaluations may continue catching up one interval at a time.
+
 ## 12. Artifact Record
 
 Artifacts should be tracked, not inferred ad hoc from task type.
@@ -550,6 +584,13 @@ type RuntimeEvent =
   | "task_attempt_finished"
   | "task_started"
   | "task_finished"
+  | "schedule_upserted"
+  | "schedule_task_created"
+  | "sensor_event_recorded"
+  | "sensor_event_deduped"
+  | "sensor_task_created"
+  | "sensor_workflow_created"
+  | "sensor_workflow_deduped"
   | "workflow_transitioned"
   | "workflow_completed"
   | "workflow_task_created"
@@ -572,6 +613,7 @@ The old runtime already proved these durable ideas:
 - explicit queue priority
 - dispatch lock
 - cycle logging and cost accounting
+- schema migrations recorded in `schema_migrations`
 - read-only operator surfaces
 
 The parts that should not survive as engine contracts:

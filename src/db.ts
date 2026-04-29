@@ -12,6 +12,7 @@ import type {
   TaskRecord,
   Workflow
 } from "./types";
+import { applySchemaMigrations } from "./migrations";
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -51,6 +52,25 @@ function createRunEventIndexes(db: Database): void {
     CREATE INDEX IF NOT EXISTS idx_run_events_task_attempt
       ON run_events (task_id, attempt_id, id);
   `);
+}
+
+function resolveAvailableAt(input: TaskInput, timestamp: string): string {
+  if (input.available_at) {
+    const date = new Date(input.available_at);
+    if (Number.isNaN(date.getTime())) {
+      throw new Error(`invalid task available_at: ${input.available_at}`);
+    }
+    return date.toISOString();
+  }
+
+  const delayMinutes = input.schedule?.delay_minutes;
+  if (delayMinutes == null) {
+    return timestamp;
+  }
+  if (!Number.isFinite(delayMinutes) || delayMinutes < 0) {
+    throw new Error("task schedule.delay_minutes must be a non-negative number");
+  }
+  return new Date(new Date(timestamp).getTime() + delayMinutes * 60_000).toISOString();
 }
 
 function indexIncludesColumn(db: Database, indexName: string, columnName: string): boolean {
@@ -218,6 +238,7 @@ export function openDb(config: RuntimeConfig): Database {
   migrateBundlesTableIfNeeded(db);
   createBundleIndexes(db);
   createRunEventIndexes(db);
+  applySchemaMigrations(db);
 
   return db;
 }
@@ -289,6 +310,7 @@ function rowToBundle(row: Record<string, unknown>): BundleArtifactRecord {
 
 export function enqueueTask(db: Database, config: RuntimeConfig, input: TaskInput): TaskRecord {
   const timestamp = nowIso();
+  const availableAt = resolveAvailableAt(input, timestamp);
   const taskId = crypto.randomUUID();
   const task: TaskRecord = {
     task_id: taskId,
@@ -305,7 +327,7 @@ export function enqueueTask(db: Database, config: RuntimeConfig, input: TaskInpu
     updated_at: timestamp,
     attempt_count: 0,
     max_attempts: input.max_attempts ?? config.maxAttempts,
-    available_at: timestamp,
+    available_at: availableAt,
     started_at: null,
     finished_at: null,
     outcome: null,

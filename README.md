@@ -69,6 +69,59 @@ bun run src/cli.ts intake --json '{
 }'
 ```
 
+Queue a task for the future:
+
+```bash
+bun run src/cli.ts intake --json '{
+  "kind": "aibtc-checkin",
+  "source": "operator:future-checkin",
+  "subject": "AIBTC check-in",
+  "payload": { "check": "heartbeat" },
+  "requested_adapter": "aibtc-heartbeat",
+  "schedule": { "delay_minutes": 30 }
+}'
+```
+
+Create a recurring schedule. Dispatch cycles run due schedules before workflow evaluation, and `schedule-tick` is available when operators want to enqueue due work explicitly.
+
+```bash
+bun run src/cli.ts schedule-create --json '{
+  "name": "aibtc-checkin",
+  "interval_seconds": 3600,
+  "task": {
+    "kind": "aibtc-checkin",
+    "source": "schedule:aibtc-checkin",
+    "subject": "AIBTC check-in",
+    "payload": { "check": "heartbeat" },
+    "requested_adapter": "aibtc-heartbeat"
+  }
+}'
+
+bun run src/cli.ts schedule-tick
+```
+
+Catch-up policy is coalesced by default: each schedule evaluation creates at most one task for a due schedule, then advances `next_run_at` by one interval from the prior due time. This preserves evidence that a check was missed without flooding the queue after downtime. If a schedule remains behind, later dispatch cycles continue advancing it one interval at a time.
+
+Ingest a sensor event. Sensor events are deduped by `dedupe_key` and may enqueue a task, create or reuse a workflow, or both.
+
+```bash
+bun run src/cli.ts sensor-event --json '{
+  "sensor_id": "discord-mentions",
+  "event_id": "message-123",
+  "source_ref": "discord://channel/message-123",
+  "dedupe_key": "discord:message-123",
+  "payload": { "summary": "external request" },
+  "proposed_workflow": {
+    "template": "goal-loop",
+    "instance_key": "discord-message-123",
+    "context": {
+      "summary": "Respond to Discord request",
+      "objective": "Investigate and respond with evidence"
+    }
+  }
+}'
+```
+
 Run one dispatch cycle:
 
 ```bash
@@ -92,6 +145,16 @@ Run tests:
 ```bash
 bun test
 ```
+
+Update a remote agent runtime from this repo:
+
+```bash
+scripts/update-agent-runtime.sh --agent spark --host dev@192.168.1.12 --port 4314
+scripts/update-agent-runtime.sh --agent forge --host dev@192.168.1.15 --port 4314
+scripts/update-agent-runtime.sh --agent lumen --host dev@192.168.1.16 --port 4314
+```
+
+The update script stops dispatch, backs up the agent DB, fast-forwards the remote repo from `origin/main`, runs install/typecheck/tests/healthcheck, applies schema migrations through `status`, restarts services, and optionally probes the LAN API.
 
 Create a workflow:
 
@@ -144,6 +207,9 @@ LAN API surfaces:
 - `/api/state` runtime state, task counts, and last event
 - `/api/heartbeat` lightweight liveness check
 - `/api/workflows`, `/api/tasks`, `/api/events`
+- `/api/schedules` list or upsert recurring schedules
+- `POST /api/schedules/tick` enqueue due scheduled work
+- `/api/sensors/events` list or ingest deduped sensor events
 - `POST /api/tasks/queue` queue a bounded operator task with a JSON `message`
 - `POST /api/tasks/:task_id/cancel` cancel a non-running task as `operator_canceled`
 - `/api/pause` read or set runtime-owned dispatch pause state; paused dispatchers do not claim new work
