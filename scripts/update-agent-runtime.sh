@@ -77,7 +77,7 @@ if [[ -z "$agent" || -z "$host" ]]; then
 fi
 
 if [[ -z "$config" ]]; then
-  config="\$HOME/.config/agent-runtime/${agent}.host.json"
+  config="~/.config/agent-runtime/${agent}.host.json"
 fi
 
 if ssh "$host" "test -d '$repo_dir/.git'"; then
@@ -106,6 +106,7 @@ restart_services="$6"
 sync_method="$7"
 
 cd "$repo_dir"
+config="${config/#\~/$HOME}"
 
 if [[ "$restart_services" == "1" ]]; then
   systemctl --user stop "agent-runtime-dispatch@${agent}.timer" || true
@@ -145,10 +146,19 @@ if [[ "$restart_services" == "1" ]]; then
 fi
 
 if [[ -n "$port" ]]; then
-  curl --fail --silent --show-error "http://127.0.0.1:${port}/api/heartbeat" >/dev/null
-  curl --fail --silent --show-error "http://127.0.0.1:${port}/api/schedules" >/dev/null
-  curl --fail --silent --show-error "http://127.0.0.1:${port}/api/sensors/events" >/dev/null
-  echo "LAN API probes passed on port ${port}"
+  for attempt in 1 2 3 4 5; do
+    if curl --fail --silent --show-error "http://127.0.0.1:${port}/api/heartbeat" >/dev/null \
+      && curl --fail --silent --show-error "http://127.0.0.1:${port}/api/schedules" >/dev/null \
+      && curl --fail --silent --show-error "http://127.0.0.1:${port}/api/sensors/events" >/dev/null; then
+      echo "LAN API probes passed on port ${port}"
+      break
+    fi
+    if [[ "$attempt" == "5" ]]; then
+      echo "LAN API probes failed on port ${port}" >&2
+      exit 1
+    fi
+    sleep 2
+  done
 fi
 
 echo "Update completed for ${agent}"
