@@ -87,7 +87,7 @@ Create a recurring schedule. Dispatch cycles run due schedules before workflow e
 ```bash
 bun run src/cli.ts schedule-create --json '{
   "name": "aibtc-checkin",
-  "interval_seconds": 3600,
+  "interval_seconds": 305,
   "task": {
     "kind": "aibtc-checkin",
     "source": "schedule:aibtc-checkin",
@@ -99,6 +99,8 @@ bun run src/cli.ts schedule-create --json '{
 
 bun run src/cli.ts schedule-tick
 ```
+
+The built-in fleet heartbeat target is 305 seconds, which is 5 minutes and 5 seconds.
 
 Catch-up policy is coalesced by default: each schedule evaluation creates at most one task for a due schedule, then advances `next_run_at` by one interval from the prior due time. This preserves evidence that a check was missed without flooding the queue after downtime. If a schedule remains behind, later dispatch cycles continue advancing it one interval at a time.
 

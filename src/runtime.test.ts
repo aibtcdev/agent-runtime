@@ -621,7 +621,7 @@ test("recurring schedule tick enqueues due tasks and advances next run", () => {
   try {
     const schedule = upsertRecurringSchedule(db, {
       name: "aibtc-checkin",
-      interval_seconds: 3600,
+      interval_seconds: 305,
       next_run_at: "2026-04-29T10:00:00Z",
       task: {
         kind: "aibtc-checkin",
@@ -641,7 +641,7 @@ test("recurring schedule tick enqueues due tasks and advances next run", () => {
     expect(result.tasksCreated).toBe(1);
     expect(claimed?.task.kind).toBe("aibtc-checkin");
     expect(claimed?.task.source).toBe("schedule:aibtc-checkin:2026-04-29T10:00:00.000Z");
-    expect(updated?.next_run_at).toBe("2026-04-29T11:00:00.000Z");
+    expect(updated?.next_run_at).toBe("2026-04-29T10:05:05.000Z");
   } finally {
     db.close(false);
   }
