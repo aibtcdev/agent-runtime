@@ -80,6 +80,20 @@ if [[ -z "$config" ]]; then
   config="\$HOME/.config/agent-runtime/${agent}.host.json"
 fi
 
+if ssh "$host" "test -d '$repo_dir/.git'"; then
+  sync_method="git"
+else
+  sync_method="rsync"
+  rsync -az --delete \
+    --exclude '.git/' \
+    --exclude 'node_modules/' \
+    --exclude 'state/' \
+    --exclude 'config/state/' \
+    --exclude 'deploy/*/state/' \
+    --exclude 'deploy/*/runtime.*.host.json' \
+    ./ "$host:$repo_dir/"
+fi
+
 remote_script=$(cat <<'REMOTE'
 set -euo pipefail
 
@@ -89,6 +103,7 @@ config="$3"
 branch="$4"
 port="$5"
 restart_services="$6"
+sync_method="$7"
 
 cd "$repo_dir"
 
@@ -106,8 +121,12 @@ else
   echo "No DB found at $db_path; skipping DB backup"
 fi
 
-git fetch origin
-git pull --ff-only origin "$branch"
+if [[ "$sync_method" == "git" ]]; then
+  git fetch origin
+  git pull --ff-only origin "$branch"
+else
+  echo "Using rsync-supplied working tree; skipping remote git pull"
+fi
 
 ~/.bun/bin/bun install
 ~/.bun/bin/bunx tsc --noEmit
@@ -136,4 +155,4 @@ echo "Update completed for ${agent}"
 REMOTE
 )
 
-ssh "$host" "bash -s -- '$agent' '$repo_dir' '$config' '$branch' '$port' '$restart_services'" <<<"$remote_script"
+ssh "$host" "bash -s -- '$agent' '$repo_dir' '$config' '$branch' '$port' '$restart_services' '$sync_method'" <<<"$remote_script"
