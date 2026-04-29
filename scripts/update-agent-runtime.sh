@@ -111,6 +111,11 @@ config="${config/#\~/$HOME}"
 if [[ "$restart_services" == "1" ]]; then
   systemctl --user stop "agent-runtime-dispatch@${agent}.timer" || true
   systemctl --user stop "agent-runtime-operator@${agent}.service" || true
+  systemctl --user disable --now "agent-runtime-sensors@${agent}.timer" || true
+  systemctl --user stop "agent-runtime-sensors@${agent}.service" || true
+  rm -f "$HOME/.config/systemd/user/agent-runtime-sensors@.timer" \
+    "$HOME/.config/systemd/user/agent-runtime-sensors@.service"
+  rm -rf "$HOME/.config/systemd/user/agent-runtime-sensors@${agent}.service.d"
 fi
 
 db_path="deploy/${agent}/state/runtime.db"

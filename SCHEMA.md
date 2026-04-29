@@ -528,7 +528,7 @@ Invariants:
 - Dispatch evaluates due schedules before workflow evaluation and task claiming.
 - Each due run is enqueued as a normal task with an `available_at` gate and a schedule-derived source key.
 - Recurring schedules are for consistency, not dependency management; dependent progression remains workflow-owned.
-- Catch-up is coalesced: one schedule evaluation creates at most one task per due schedule, then advances from the prior due time by one interval. Repeated evaluations may continue catching up one interval at a time.
+- Catch-up is coalesced: one schedule evaluation creates at most one task per due schedule, then advances from the evaluation time by one interval. Missed schedule slots are recorded as one due task instead of replayed one interval at a time.
 
 ## 12. Artifact Record
 

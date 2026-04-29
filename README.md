@@ -102,7 +102,9 @@ bun run src/cli.ts schedule-tick
 
 The built-in fleet heartbeat target is 305 seconds, which is 5 minutes and 5 seconds.
 
-Catch-up policy is coalesced by default: each schedule evaluation creates at most one task for a due schedule, then advances `next_run_at` by one interval from the prior due time. This preserves evidence that a check was missed without flooding the queue after downtime. If a schedule remains behind, later dispatch cycles continue advancing it one interval at a time.
+Fleet heartbeat check-ins should be produced by this recurring schedule only. Do not run a separate heartbeat sensor or sidecar timer for the same task; duplicate producers can hit the AIBTC rate limit and obscure the task history.
+
+Catch-up policy is coalesced by default: each schedule evaluation creates at most one task for a due schedule, then advances `next_run_at` by one interval from the evaluation time. This preserves evidence that a check was missed without flooding the queue after downtime or replaying stale heartbeat slots into a rate limit.
 
 Ingest a sensor event. Sensor events are deduped by `dedupe_key` and may enqueue a task, create or reuse a workflow, or both.
 

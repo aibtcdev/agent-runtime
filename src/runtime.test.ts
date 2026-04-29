@@ -641,7 +641,7 @@ test("recurring schedule tick enqueues due tasks and advances next run", () => {
     expect(result.tasksCreated).toBe(1);
     expect(claimed?.task.kind).toBe("aibtc-checkin");
     expect(claimed?.task.source).toBe("schedule:aibtc-checkin:2026-04-29T10:00:00.000Z");
-    expect(updated?.next_run_at).toBe("2026-04-29T10:05:05.000Z");
+    expect(updated?.next_run_at).toBe("2026-04-29T10:10:05.000Z");
   } finally {
     db.close(false);
   }

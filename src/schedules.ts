@@ -129,7 +129,7 @@ export function enqueueDueSchedules(
         due_at: dueAt
       });
     }
-    markScheduleRan(db, schedule.schedule_id, atIso, nextIntervalTime(dueAt, schedule.interval_seconds));
+    markScheduleRan(db, schedule.schedule_id, atIso, nextIntervalTime(atIso, schedule.interval_seconds));
   }
 
   return { schedulesEvaluated: due.length, tasksCreated, taskIds };
