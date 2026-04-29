@@ -1707,7 +1707,7 @@ test("runOnce executes script adapters through the task attempt path", async () 
   config.defaultAdapter = "script-echo";
   config.adapters["script-echo"] = {
     mode: "script",
-    command: "bun",
+    command: process.execPath,
     timeoutMs: 60000,
     workingDir: path.dirname(config.dbPath),
     extraArgs: [
