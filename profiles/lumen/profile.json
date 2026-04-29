@@ -11,7 +11,7 @@
     "github-storytelling",
     "discord-reply"
   ],
-  "default_adapter": "ollama-qwen",
+  "default_adapter": "claude-ollama-qwen",
   "tool_policy": {
     "allow_repo_changes": false,
     "allow_external_post": false

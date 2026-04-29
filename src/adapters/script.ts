@@ -1,40 +1,10 @@
 import path from "node:path";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { spawn } from "node:child_process";
 import type { AdapterExecutionResult, ExecutionRequest, ScriptAdapterConfig } from "../types";
 import { buildAgentCliAuditDir } from "./cli";
-
-type LoadedEnv = Record<string, string>;
-
-function parseEnvFile(filePath: string): LoadedEnv {
-  if (!existsSync(filePath)) {
-    return {};
-  }
-
-  const result: LoadedEnv = {};
-  const lines = readFileSync(filePath, "utf8").split(/\r?\n/);
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) {
-      continue;
-    }
-    const separator = trimmed.indexOf("=");
-    if (separator < 1) {
-      continue;
-    }
-    const rawKey = trimmed.slice(0, separator).trim();
-    const key = rawKey.replace(/^export\s+/, "").trim();
-    if (!key) {
-      continue;
-    }
-    let value = trimmed.slice(separator + 1).trim();
-    if ((value.startsWith("\"") && value.endsWith("\"")) || (value.startsWith("'") && value.endsWith("'"))) {
-      value = value.slice(1, -1);
-    }
-    result[key] = value;
-  }
-  return result;
-}
+import { parseEnvFile, type LoadedEnv } from "../envfile";
+import { resolveCredentialRefs } from "../credentials";
 
 function redactEnvValue(key: string, value: string): string {
   if (/token|secret|password|key|auth/i.test(key)) {
@@ -141,7 +111,7 @@ export async function executeWithScript(request: ExecutionRequest): Promise<Adap
   }
   const adapter = request.adapterConfig;
   const cwd = adapter.workingDir ? path.resolve(adapter.workingDir) : process.cwd();
-  const env = buildScriptEnv(request, adapter);
+  const env = await resolveCredentialRefs(buildScriptEnv(request, adapter));
   const args = [...(adapter.extraArgs ?? []), ...taskArgs(request)];
 
   return await new Promise<AdapterExecutionResult>((resolve) => {

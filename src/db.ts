@@ -720,11 +720,14 @@ type AttemptRetryInput = {
   exitStatus: AttemptExitStatus;
   retryClass?: AttemptRetryClass | null;
   diagnostics?: Record<string, unknown> | null;
+  availableAtOverride?: string;
+  preserveAttemptCount?: boolean;
 } & AttemptFinishPaths;
 
 export function rescheduleTaskAttempt(db: Database, config: RuntimeConfig, input: AttemptRetryInput): string {
   const timestamp = nowIso();
-  const availableAt = new Date(Date.now() + config.retryBackoffSeconds * 1000).toISOString();
+  const availableAt = input.availableAtOverride
+    ?? new Date(Date.now() + config.retryBackoffSeconds * 1000).toISOString();
 
   withImmediateTransaction(db, () => {
     if (input.attemptId) {
@@ -772,9 +775,10 @@ export function rescheduleTaskAttempt(db: Database, config: RuntimeConfig, input
           available_at = ?,
           finished_at = NULL,
           outcome_json = NULL,
-          last_error = ?
+          last_error = ?,
+          attempt_count = CASE WHEN ? = 1 THEN MAX(0, attempt_count - 1) ELSE attempt_count END
       WHERE task_id = ?
-    `).run(timestamp, availableAt, input.errorMessage, input.taskId);
+    `).run(timestamp, availableAt, input.errorMessage, input.preserveAttemptCount ? 1 : 0, input.taskId);
 
     recordEvent(
       db,

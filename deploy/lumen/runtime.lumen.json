@@ -1,5 +1,5 @@
 {
-  "runtimeName": "lumen-proving",
+  "runtimeName": "lumen",
   "runtimePolicy": "You are Lumen, the AIBTC community manager. Explain what shipped GitHub changes mean in human story terms. Handle Discord-facing tasks carefully, concisely, and without raw diff noise.",
   "stateDir": "./state",
   "logDir": "./state/logs",
@@ -7,7 +7,7 @@
   "dbPath": "./state/runtime.db",
   "lockPath": "./state/dispatch.lock",
   "defaultProfile": "lumen",
-  "defaultAdapter": "ollama-qwen",
+  "defaultAdapter": "claude-ollama-qwen",
   "maxAttempts": 3,
   "retryBackoffSeconds": 60,
   "profiles": {
@@ -16,26 +16,41 @@
     "proving-codex": "../../profiles/proving-codex/profile.json"
   },
   "adapters": {
-    "ollama-qwen": {
-      "mode": "ollama-generate",
-      "endpoint": "http://192.168.1.69:11434",
-      "model": "qwen3.6:35b",
-      "timeoutMs": 120000
-    },
-    "codex-ollama": {
+    "claude-ollama-qwen": {
       "mode": "agent-cli",
-      "driver": "codex",
-      "command": "./bin/codex",
+      "driver": "claude-code",
+      "command": "/home/dev/.local/bin/claude",
       "model": "qwen3.6:35b",
       "timeoutMs": 900000,
       "workingDir": "../..",
-      "sandbox": "danger-full-access",
-      "envFile": "./codex.env",
-      "providerId": "ollama_remote",
-      "providerName": "Ollama Remote",
+      "envFile": "/home/dev/.claude-ollama-qwen36",
+      "settingsFile": "/home/dev/.claude/settings.json",
       "providerBaseUrl": "http://192.168.1.69:11434/v1",
-      "providerWireApi": "responses",
-      "providerRequiresOpenAIAuth": false,
+      "autonomy": "trusted-vm",
+      "fallback_adapter": "claude-openrouter-qwen"
+    },
+    "claude-openrouter-qwen": {
+      "mode": "agent-cli",
+      "driver": "claude-code",
+      "command": "/home/dev/.local/bin/claude",
+      "model": "qwen/qwen3-235b-a22b-2507",
+      "timeoutMs": 900000,
+      "workingDir": "../..",
+      "envFile": "/home/dev/.config/agent-runtime/lumen.claude-openrouter.env",
+      "settingsFile": "/home/dev/.claude/settings.json",
+      "providerBaseUrl": "https://openrouter.ai/api/v1",
+      "autonomy": "trusted-vm",
+      "fallback_adapter": "hermes-openrouter-qwen"
+    },
+    "hermes-openrouter-qwen": {
+      "mode": "agent-cli",
+      "driver": "hermes-agent",
+      "command": "/home/dev/.local/bin/hermes",
+      "model": "qwen/qwen3-235b-a22b-2507",
+      "timeoutMs": 900000,
+      "workingDir": "../..",
+      "envFile": "/home/dev/.config/agent-runtime/lumen.openrouter.env",
+      "providerBaseUrl": "https://openrouter.ai/api/v1",
       "autonomy": "trusted-vm"
     },
     "aibtc-heartbeat": {
@@ -43,7 +58,8 @@
       "command": "../../scripts/aibtc-heartbeat-wrapper.sh",
       "timeoutMs": 60000,
       "workingDir": "../..",
-      "envFile": "/home/dev/.config/agent-runtime/lumen.heartbeat.env"
+      "envFile": "/home/dev/.config/agent-runtime/lumen.heartbeat.env",
+      "retry_hint_service": "aibtc"
     }
   }
 }

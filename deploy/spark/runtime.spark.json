@@ -30,7 +30,8 @@
       "command": "../../scripts/aibtc-heartbeat-wrapper.sh",
       "timeoutMs": 60000,
       "workingDir": "../..",
-      "envFile": "/home/dev/.config/agent-runtime/spark.heartbeat.env"
+      "envFile": "/home/dev/.config/agent-runtime/spark.heartbeat.env",
+      "retry_hint_service": "aibtc"
     }
   }
 }

@@ -33,6 +33,7 @@ export type OllamaGenerateAdapterConfig = {
   endpoint: string;
   model: string;
   timeoutMs: number;
+  fallback_adapter?: string;
 };
 
 export type AgentCliAdapterConfig = {
@@ -53,6 +54,8 @@ export type AgentCliAdapterConfig = {
   providerWireApi?: "responses";
   providerRequiresOpenAIAuth?: boolean;
   autonomy?: "restricted" | "trusted-vm";
+  retry_hint_service?: string;
+  fallback_adapter?: string;
 };
 
 export type ScriptAdapterConfig = {
@@ -63,6 +66,7 @@ export type ScriptAdapterConfig = {
   envFile?: string;
   env?: Record<string, string>;
   extraArgs?: string[];
+  retry_hint_service?: string;
 };
 
 export type AdapterConfig = OllamaGenerateAdapterConfig | AgentCliAdapterConfig | ScriptAdapterConfig;
@@ -196,6 +200,8 @@ export type CanonicalOutcome = {
   external_messages?: Array<Record<string, unknown>>;
   workflow_signal?: string;
   raw_output?: string;
+  retry_after_seconds?: number;
+  retry_hint_source?: string;
 };
 
 export type Workflow = {

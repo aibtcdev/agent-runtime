@@ -3,8 +3,9 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { spawn } from "node:child_process";
 import type { AgentCliAdapterConfig, AdapterExecutionResult, ExecutionRequest } from "../types";
+import { parseEnvFile, type LoadedEnv } from "../envfile";
+import { resolveCredentialRefs } from "../credentials";
 
-type LoadedEnv = Record<string, string>;
 type AgentCliInvocation = {
   command: string;
   args: string[];
@@ -12,36 +13,6 @@ type AgentCliInvocation = {
   cwd: string;
   inputText?: string;
 };
-
-function parseEnvFile(filePath: string): LoadedEnv {
-  if (!existsSync(filePath)) {
-    return {};
-  }
-
-  const result: LoadedEnv = {};
-  const lines = readFileSync(filePath, "utf8").split(/\r?\n/);
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) {
-      continue;
-    }
-    const separator = trimmed.indexOf("=");
-    if (separator < 1) {
-      continue;
-    }
-    const rawKey = trimmed.slice(0, separator).trim();
-    const key = rawKey.replace(/^export\s+/, "").trim();
-    if (!key) {
-      continue;
-    }
-    let value = trimmed.slice(separator + 1).trim();
-    if ((value.startsWith("\"") && value.endsWith("\"")) || (value.startsWith("'") && value.endsWith("'"))) {
-      value = value.slice(1, -1);
-    }
-    result[key] = value;
-  }
-  return result;
-}
 
 function loadAdapterEnv(adapter: AgentCliAdapterConfig): LoadedEnv {
   const envFileVars = adapter.envFile ? parseEnvFile(adapter.envFile) : {};
@@ -329,9 +300,10 @@ export async function executeWithAgentCli(request: ExecutionRequest): Promise<Ad
   const tempDir = mkdtempSync(path.join(tmpdir(), "agent-runtime-cli-"));
   const outputLastMessagePath = path.join(tempDir, "last-message.txt");
   const invocation = buildAgentCliInvocation(request, adapter, outputLastMessagePath);
+  const resolvedInvocationEnv = await resolveCredentialRefs(invocation.env);
   const childEnv = {
     ...process.env,
-    ...invocation.env
+    ...resolvedInvocationEnv
   };
 
   if (childEnv.CODEX_HOME) {

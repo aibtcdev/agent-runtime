@@ -24,6 +24,14 @@
       "workingDir": "../..",
       "sandbox": "danger-full-access",
       "autonomy": "trusted-vm"
+    },
+    "aibtc-heartbeat": {
+      "mode": "script",
+      "command": "../../scripts/aibtc-heartbeat-wrapper.sh",
+      "timeoutMs": 60000,
+      "workingDir": "../..",
+      "envFile": "/home/dev/.config/agent-runtime/cairn.heartbeat.env",
+      "retry_hint_service": "aibtc"
     }
   }
 }

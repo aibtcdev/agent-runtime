@@ -21,6 +21,8 @@ import type { CanonicalOutcome, TaskAttemptRecord, RuntimeConfig } from "./types
 import { normalizeCanonicalOutcome, verifyCompletedTaskOutcome, verifyTaskInputArtifacts } from "./validation";
 import { evaluateActiveWorkflows } from "./workflow-runtime";
 import { writeArtifactIfNeeded } from "./artifacts";
+import { extractRetryHint } from "./retry-hints";
+import { selectAdapterWithFallback } from "./adapter-probe";
 
 type RuntimeSession = {
   runnerId: string;
@@ -235,15 +237,14 @@ export async function runOnce(db: Database, config: RuntimeConfig): Promise<Reco
       return { ok: false, status: "blocked", task_id: task.task_id };
     }
 
-    const adapterId = task.requested_adapter || (
+    const requestedAdapterId = task.requested_adapter || (
       config.adapters[profile.default_adapter] ? profile.default_adapter : config.defaultAdapter
     );
-    const adapterConfig = config.adapters[adapterId];
 
-    if (!adapterConfig) {
+    if (!config.adapters[requestedAdapterId]) {
       const outcome: CanonicalOutcome = {
         status: "permanent_failure",
-        operator_summary: `Unknown adapter: ${adapterId}`,
+        operator_summary: `Unknown adapter: ${requestedAdapterId}`,
         machine_status: "failed",
         attempt_id: attempt.attempt_id
       };
@@ -252,12 +253,32 @@ export async function runOnce(db: Database, config: RuntimeConfig): Promise<Reco
         attemptId: attempt.attempt_id,
         runnerId: runtimeSession.runnerId,
         outcome,
-        lastError: `Unknown adapter: ${adapterId}`,
+        lastError: `Unknown adapter: ${requestedAdapterId}`,
         exitStatus: "error",
         retryClass: "permanent",
-        diagnostics: { reason: "adapter_not_found", adapter_id: adapterId }
+        diagnostics: { reason: "adapter_not_found", adapter_id: requestedAdapterId }
       });
       return { ok: false, status: "permanent_failure", task_id: task.task_id };
+    }
+
+    const adapterSelection = await selectAdapterWithFallback(config, requestedAdapterId);
+    const adapterId = adapterSelection.adapterId;
+    const adapterConfig = config.adapters[adapterId];
+    if (adapterId !== requestedAdapterId) {
+      recordEvent(db, "adapter_fallback_used", task.task_id, {
+        runner_id: runtimeSession.runnerId,
+        requested_adapter: requestedAdapterId,
+        selected_adapter: adapterId,
+        chain: adapterSelection.chain
+      }, attempt.attempt_id);
+      await appendLog(config, {
+        event: "adapter_fallback_used",
+        task_id: task.task_id,
+        attempt_id: attempt.attempt_id,
+        requested_adapter: requestedAdapterId,
+        selected_adapter: adapterId,
+        chain: adapterSelection.chain
+      });
     }
 
     updateAttemptAdapter(db, attempt.attempt_id, {
@@ -413,6 +434,45 @@ export async function runOnce(db: Database, config: RuntimeConfig): Promise<Reco
     const writtenArtifactPaths = await writeArtifactIfNeeded(config, task, outcome);
     if (writtenArtifactPaths.length > 0) {
       outcome.artifact_paths = [...new Set([...(outcome.artifact_paths ?? []), ...writtenArtifactPaths])];
+    }
+
+    if (outcome.status === "blocked") {
+      const retryHintService = "retry_hint_service" in adapterConfig ? adapterConfig.retry_hint_service : undefined;
+      const hint = extractRetryHint(outcome, retryHintService);
+      if (hint) {
+        const availableAt = new Date(Date.now() + hint.afterSeconds * 1000).toISOString();
+        rescheduleTaskAttempt(db, config, {
+          taskId: task.task_id,
+          attemptId: attempt.attempt_id,
+          runnerId: runtimeSession.runnerId,
+          errorMessage: outcome.operator_summary,
+          exitStatus: "error",
+          retryClass: "retryable",
+          diagnostics: {
+            ...(executionResult.diagnostics ?? {}),
+            reason: "rate_limit_retry",
+            retry_hint_source: hint.source,
+            retry_after_seconds: hint.afterSeconds
+          },
+          availableAtOverride: availableAt,
+          preserveAttemptCount: true,
+          ...attemptPaths
+        });
+        recordEvent(db, "rate_limit_rescheduled", task.task_id, {
+          runner_id: runtimeSession.runnerId,
+          retry_after_seconds: hint.afterSeconds,
+          retry_hint_source: hint.source,
+          available_at: availableAt
+        }, attempt.attempt_id);
+        return {
+          ok: false,
+          status: "rate_limit_rescheduled",
+          task_id: task.task_id,
+          attempt_id: attempt.attempt_id,
+          retry_after_seconds: hint.afterSeconds,
+          available_at: availableAt
+        };
+      }
     }
 
     const verificationIssues = await verifyCompletedTaskOutcome(config, task, outcome);

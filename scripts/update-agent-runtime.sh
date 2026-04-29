@@ -148,6 +148,24 @@ if [[ "$restart_services" == "1" ]]; then
   systemctl --user start "agent-runtime-dispatch@${agent}.timer"
   systemctl --user --no-pager --full status "agent-runtime-operator@${agent}.service"
   systemctl --user --no-pager --full status "agent-runtime-dispatch@${agent}.timer"
+
+  # Verify services actually became active. is-active is asynchronous after
+  # `start`, so poll briefly before declaring victory.
+  for unit in "agent-runtime-operator@${agent}.service" "agent-runtime-dispatch@${agent}.timer"; do
+    for attempt in 1 2 3 4 5; do
+      state=$(systemctl --user is-active "$unit" 2>/dev/null || true)
+      if [[ "$state" == "active" ]]; then
+        echo "service $unit: active"
+        break
+      fi
+      if [[ "$attempt" == "5" ]]; then
+        echo "service $unit failed to become active (last state: $state)" >&2
+        systemctl --user --no-pager --full status "$unit" >&2 || true
+        exit 1
+      fi
+      sleep 1
+    done
+  done
 fi
 
 if [[ -n "$port" ]]; then

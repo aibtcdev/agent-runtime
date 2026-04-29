@@ -170,6 +170,55 @@ async function main(): Promise<void> {
         console.log(JSON.stringify({ queued: true, bridge: "discord", task_id: task.task_id, profile: task.requested_profile }, null, 2));
         break;
       }
+      case "adapters": {
+        const checks = await Promise.all(
+          Object.keys(config.adapters).map((adapterId) => healthcheckAdapter(adapterId, config))
+        );
+        const adapters = checks.map((check) => {
+          const adapter = config.adapters[check.adapterId];
+          const isDefault = check.adapterId === config.defaultAdapter;
+          const adapterCommand = "command" in adapter ? adapter.command : null;
+          const fallback = "fallback_adapter" in adapter ? adapter.fallback_adapter : undefined;
+          const brokenReason = !check.ok
+            ? (typeof check.detail.error === "string"
+              ? check.detail.error
+              : check.detail.command_path === null
+                ? `command not found: ${check.detail.command ?? adapterCommand}`
+                : "healthcheck failed")
+            : undefined;
+          return {
+            id: check.adapterId,
+            mode: adapter.mode,
+            isDefault,
+            ok: check.ok,
+            ...(fallback ? { fallback_adapter: fallback } : {}),
+            ...(brokenReason ? { broken_reason: brokenReason } : {}),
+            detail: check.detail
+          };
+        });
+        const defaultEntry = adapters.find((a) => a.isDefault);
+        const defaultOk = defaultEntry?.ok ?? false;
+        const result: Record<string, unknown> = {
+          defaultAdapter: config.defaultAdapter,
+          defaultOk,
+          adapters
+        };
+        if (flags.probe) {
+          const { selectAdapterWithFallback, clearAdapterProbeCache } = await import("./adapter-probe");
+          clearAdapterProbeCache();
+          const selection = await selectAdapterWithFallback(config, config.defaultAdapter);
+          result.probe = {
+            requested_adapter: config.defaultAdapter,
+            selected_adapter: selection.adapterId,
+            chain: selection.chain
+          };
+        }
+        console.log(JSON.stringify(result, null, 2));
+        if (!defaultOk) {
+          process.exitCode = 1;
+        }
+        break;
+      }
       case "healthcheck": {
         const configIssues = await validateRuntimeConfig(config);
         const profileChecks = await Promise.all(
@@ -290,7 +339,7 @@ async function main(): Promise<void> {
         break;
       }
       default: {
-        console.error("Usage: bun run src/cli.ts <intake|schedule-create|schedule-tick|sensor-event|run-once|status|bridge-github|bridge-discord|healthcheck|workflow-list|workflow-show|workflow-create|workflow-transition|workflow-complete|snapshot|seed-backlog|report> [--config path] [--json json | --file path]");
+        console.error("Usage: bun run src/cli.ts <intake|schedule-create|schedule-tick|sensor-event|run-once|status|adapters|bridge-github|bridge-discord|healthcheck|workflow-list|workflow-show|workflow-create|workflow-transition|workflow-complete|snapshot|seed-backlog|report> [--config path] [--json json | --file path]");
         process.exitCode = 1;
       }
     }
