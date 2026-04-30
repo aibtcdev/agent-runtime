@@ -18,6 +18,13 @@
       "timeoutMs": 60000,
       "workingDir": "/home/dev/agent-runtime",
       "envFile": "/home/dev/.config/agent-runtime/forge.heartbeat.env"
+    },
+    "alb-email-poll": {
+      "mode": "script",
+      "command": "/home/dev/agent-runtime/scripts/alb-email-poll-wrapper.sh",
+      "timeoutMs": 120000,
+      "workingDir": "/home/dev/agent-runtime",
+      "envFile": "/home/dev/.config/agent-runtime/forge.alb-email-poll.env"
     }
   }
 }

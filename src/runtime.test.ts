@@ -28,7 +28,7 @@ import { evaluateActiveWorkflows } from "./workflow-runtime";
 import type { RuntimeConfig } from "./types";
 import { writeArtifactIfNeeded } from "./artifacts";
 import { assembleContext, compileBundle } from "./context";
-import { buildAgentCliAuditDir, buildAgentCliInvocation, extractHermesResponseText } from "./adapters/cli";
+import { buildAgentCliAuditDir, buildAgentCliInvocation, extractClaudeCodeResultText, extractHermesResponseText } from "./adapters/cli";
 import { loadConfig } from "./config";
 import { resetRuntimeForTests, runOnce } from "./runtime";
 import { readDispatchPause, writeDispatchPause } from "./pause";
@@ -1204,6 +1204,26 @@ test("extractHermesResponseText strips quiet-mode session metadata", () => {
   ].join("\n");
 
   expect(extractHermesResponseText(raw)).toBe('{"status":"completed","machine_status":"ok"}');
+});
+
+test("extractClaudeCodeResultText unwraps the Claude Code JSON envelope", () => {
+  const inner = '{"status":"completed","machine_status":"ok","external_messages":[{"alb_email_summary":{"intent":"system-test"}}]}';
+  const envelope = JSON.stringify({
+    type: "result",
+    subtype: "success",
+    is_error: false,
+    duration_ms: 6800,
+    result: inner,
+    session_id: "abc"
+  });
+
+  expect(extractClaudeCodeResultText(envelope)).toBe(inner);
+});
+
+test("extractClaudeCodeResultText falls through for non-envelope output", () => {
+  const raw = '{"status":"completed","machine_status":"ok"}';
+  expect(extractClaudeCodeResultText(raw)).toBe(raw);
+  expect(extractClaudeCodeResultText("not json at all")).toBe("not json at all");
 });
 
 test("buildAgentCliAuditDir scopes adapter evidence per attempt", () => {

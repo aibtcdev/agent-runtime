@@ -1,0 +1,14 @@
+{
+  "name": "alb-email-inbox",
+  "interval_seconds": 600,
+  "enabled": true,
+  "task": {
+    "kind": "alb-email-poll",
+    "source": "schedule:alb-email-inbox",
+    "subject": "Poll ALB inbox for new email",
+    "priority": 5,
+    "max_attempts": 1,
+    "requested_adapter": "alb-email-poll",
+    "payload": {}
+  }
+}

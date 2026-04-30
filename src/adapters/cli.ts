@@ -288,7 +288,29 @@ function readLastMessage(
   if (adapter.driver === "hermes-agent") {
     return extractHermesResponseText(stdoutText) || stderrText;
   }
+  if (adapter.driver === "claude-code") {
+    return extractClaudeCodeResultText(stdoutText) || stderrText;
+  }
   return stdoutText || stderrText;
+}
+
+export function extractClaudeCodeResultText(stdoutText: string): string {
+  // Claude Code with --output-format json wraps the model response in
+  // {type:"result", subtype:"success", result:"<actual JSON>", ...}.
+  // Unwrap so downstream canonical-outcome parsing sees the model's JSON.
+  const trimmed = stdoutText.trim();
+  if (!trimmed) {
+    return stdoutText;
+  }
+  try {
+    const parsed = JSON.parse(trimmed) as { type?: string; result?: unknown };
+    if (parsed && parsed.type === "result" && typeof parsed.result === "string") {
+      return parsed.result;
+    }
+  } catch {
+    /* not a Claude Code JSON envelope; fall through */
+  }
+  return stdoutText;
 }
 
 export async function executeWithAgentCli(request: ExecutionRequest): Promise<AdapterExecutionResult> {

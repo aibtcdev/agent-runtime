@@ -13,7 +13,8 @@
   "profiles": {
     "lumen": "../../profiles/lumen/profile.json",
     "proving-claude": "../../profiles/proving-claude/profile.json",
-    "proving-codex": "../../profiles/proving-codex/profile.json"
+    "proving-codex": "../../profiles/proving-codex/profile.json",
+    "email-handler": "../../profiles/email-handler/profile.json"
   },
   "adapters": {
     "claude-ollama-qwen": {
