@@ -1,0 +1,14 @@
+{
+  "name": "aibtc-heartbeat",
+  "interval_seconds": 3600,
+  "enabled": true,
+  "task": {
+    "kind": "aibtc-heartbeat",
+    "source": "schedule:aibtc-heartbeat",
+    "subject": "AIBTC liveness check-in (stretched)",
+    "priority": 9,
+    "max_attempts": 1,
+    "requested_adapter": "aibtc-heartbeat",
+    "payload": {}
+  }
+}
