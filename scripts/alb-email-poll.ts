@@ -120,6 +120,43 @@ class AlbInboxError extends Error {
   }
 }
 
+async function getInboxStatus(walletPassword: string): Promise<{ btc: string; unread: number; total: number }> {
+  const ts = Math.floor(Date.now() / 1000);
+  const apiPath = "/api/me/inbox-status";
+  const signedMessage = `GET ${apiPath}:${ts}`;
+  const { signer, signatureBase64 } = btcSign(signedMessage, walletPassword);
+
+  const url = `${ALB_BASE}${apiPath}`;
+  const resp = await fetch(url, {
+    method: "GET",
+    headers: {
+      "X-BTC-Address": signer,
+      "X-BTC-Signature": signatureBase64,
+      "X-BTC-Timestamp": String(ts)
+    }
+  });
+
+  const text = await resp.text();
+  let body: { ok?: boolean; data?: { unread?: number; total?: number }; error?: unknown } | string = text;
+  try {
+    body = JSON.parse(text) as typeof body;
+  } catch {
+    /* keep as string */
+  }
+
+  if (!resp.ok || typeof body !== "object" || !body.ok) {
+    throw new AlbInboxError(`ALB inbox-status failed: HTTP ${resp.status}`, {
+      status: resp.status,
+      body
+    });
+  }
+  return {
+    btc: signer,
+    unread: body.data?.unread ?? 0,
+    total: body.data?.total ?? 0
+  };
+}
+
 async function listInbox(walletPassword: string, limit: number): Promise<{ btc: string; messages: InboxMessage[] }> {
   const ts = Math.floor(Date.now() / 1000);
   const apiPath = "/api/me/email/inbox";
@@ -278,6 +315,63 @@ async function main(): Promise<void> {
   const runtimeDir = path.resolve(scriptDir, "..");
   const triageProfile = process.env.ALB_EMAIL_TRIAGE_PROFILE ?? "email-handler";
   const limit = Number(process.env.ALB_EMAIL_INBOX_LIMIT ?? "50") || 50;
+
+  // Wake-up bit: hit /api/me/inbox-status first (1-row read) and skip the
+  // full inbox fetch when unread === 0. This is the dominant cost saver for
+  // poll-driven runtimes — most polls find no new mail, and the previous
+  // path scanned the entire inbox table on every call regardless.
+  let status: Awaited<ReturnType<typeof getInboxStatus>> | null = null;
+  try {
+    status = await getInboxStatus(walletPassword);
+  } catch (err) {
+    if (err instanceof AlbInboxError && err.detail.status === 404) {
+      // Endpoint not yet deployed — fall through to the legacy path so the
+      // runtime still works against pre-PR2 ALB versions.
+      status = null;
+    } else if (err instanceof AlbInboxError) {
+      emit({
+        status: "needs_retry",
+        machine_status: "needs_retry",
+        operator_summary: `alb-email-poll: ${err.message}`,
+        file_changes: [],
+        artifact_paths: [],
+        follow_up_tasks: [],
+        external_messages: [{ alb_inbox_error: err.detail }]
+      });
+    } else {
+      const summary = err instanceof Error ? err.message : String(err);
+      emit({
+        status: "failed",
+        machine_status: "failed",
+        operator_summary: `alb-email-poll: ${summary}`,
+        file_changes: [],
+        artifact_paths: [],
+        follow_up_tasks: [],
+        external_messages: []
+      });
+    }
+  }
+
+  if (status && status.unread === 0) {
+    emit({
+      status: "completed",
+      machine_status: "ok",
+      operator_summary: `Polled ALB inbox-status: 0 unread (total=${status.total}). Skipped full fetch.`,
+      file_changes: [],
+      artifact_paths: [],
+      follow_up_tasks: [],
+      external_messages: [
+        {
+          alb_inbox_summary: {
+            wake_up_bit: true,
+            unread: 0,
+            total: status.total,
+            btc_address: status.btc
+          }
+        }
+      ]
+    });
+  }
 
   let inbox: Awaited<ReturnType<typeof listInbox>>;
   try {
