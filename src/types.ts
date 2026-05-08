@@ -82,6 +82,13 @@ export type Profile = {
   context_policy: {
     include_recent_task_memory: boolean;
     max_prompt_chars: number;
+    /**
+     * Maximum characters used when summarizing the task payload for the prompt.
+     * Optional; defaults to the runtime-internal `DEFAULT_MAX_PAYLOAD_CHARS`
+     * (currently 4000) when unset. Profiles that need to ship larger evidence
+     * payloads (curated diffs, structured review excerpts) can raise this.
+     */
+    max_payload_chars?: number;
   };
   result_schema: Record<string, boolean | string>;
   integration_policies: Record<string, string>;

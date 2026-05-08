@@ -7,7 +7,14 @@ import type { Database } from "bun:sqlite";
 import { getWorkflowById } from "./db";
 import type { AdapterConfig, BundleArtifactRecord, Profile, ReplayGrade, TaskRecord, RuntimeConfig } from "./types";
 
-const MAX_PAYLOAD_CHARS = 4000;
+/**
+ * Default cap on characters used when summarizing the task payload for the
+ * prompt. Profiles can override via `context_policy.max_payload_chars` when
+ * they need to ship larger evidence payloads (e.g., curated PR diffs for
+ * review tasks). Kept conservative to preserve prior behavior for profiles
+ * that do not opt in.
+ */
+export const DEFAULT_MAX_PAYLOAD_CHARS = 4000;
 
 function sanitizeRelativeArtifactPath(value: string): string {
   return value
@@ -40,8 +47,8 @@ function truncateText(value: string, maxChars: number): string {
   return `${value.slice(0, Math.max(0, maxChars - 16))}\n[truncated]\n`;
 }
 
-function summarizeJson(value: Record<string, unknown>): string {
-  return truncateText(JSON.stringify(value, null, 2), MAX_PAYLOAD_CHARS);
+function summarizeJson(value: Record<string, unknown>, maxChars: number = DEFAULT_MAX_PAYLOAD_CHARS): string {
+  return truncateText(JSON.stringify(value, null, 2), maxChars);
 }
 
 function buildBundleTaskSnapshot(task: TaskRecord): Record<string, unknown> {
@@ -200,7 +207,7 @@ function buildGoalLoopContextLines(config: RuntimeConfig, task: TaskRecord): str
 }
 
 function buildPromptText(config: RuntimeConfig, profile: Profile, task: TaskRecord): string {
-  const payloadBlock = summarizeJson(task.payload);
+  const payloadBlock = summarizeJson(task.payload, profile.context_policy.max_payload_chars);
   const phaseSkills = Array.isArray(task.payload.phase_skills)
     ? task.payload.phase_skills.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
     : [];
