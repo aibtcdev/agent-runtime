@@ -792,6 +792,56 @@ test("goal loop context no longer inlines oversized artifact content", async () 
   expect(context).not.toContain("tail");
 });
 
+test("payload truncates to default 4000 chars when context_policy does not override max_payload_chars", () => {
+  const config = testConfig();
+  const longString = "x".repeat(8000);
+  const profile = testProfile();
+  const context = assembleContext(config, profile, testTaskRecord({
+    payload: { evidence: longString }
+  }));
+
+  expect(context).toContain("[truncated]");
+  // Default cap is 4000; the payload block should not contain the full 8000-char value.
+  expect(context).not.toContain("x".repeat(8000));
+});
+
+test("payload respects context_policy.max_payload_chars override when profile sets it higher", () => {
+  const config = testConfig();
+  const longString = "y".repeat(8000);
+  const profile = testProfile({
+    context_policy: {
+      include_recent_task_memory: true,
+      max_prompt_chars: 32000,
+      max_payload_chars: 12000
+    }
+  });
+  const context = assembleContext(config, profile, testTaskRecord({
+    payload: { evidence: longString }
+  }));
+
+  // With a 12000-char payload cap, the full 8000-char value fits without truncation.
+  expect(context).toContain("y".repeat(8000));
+  expect(context).not.toContain("[truncated]");
+});
+
+test("payload respects context_policy.max_payload_chars override when profile sets it lower", () => {
+  const config = testConfig();
+  const longString = "z".repeat(2000);
+  const profile = testProfile({
+    context_policy: {
+      include_recent_task_memory: true,
+      max_prompt_chars: 16000,
+      max_payload_chars: 1000
+    }
+  });
+  const context = assembleContext(config, profile, testTaskRecord({
+    payload: { evidence: longString }
+  }));
+
+  expect(context).toContain("[truncated]");
+  expect(context).not.toContain("z".repeat(2000));
+});
+
 test("artifact-writing context requires declared managed artifact paths in artifact_paths", () => {
   const config = testConfig();
   const context = assembleContext(config, testProfile(), testTaskRecord({
