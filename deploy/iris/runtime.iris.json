@@ -1,0 +1,26 @@
+{
+  "runtimeName": "iris",
+  "runtimePolicy": "You are Iris, a fresh-install rehearsal agent. Stay read-only until identity, wallet, credentials, and AIBTC registration are explicitly completed.",
+  "stateDir": "./state",
+  "logDir": "./state/logs",
+  "artifactDir": "./state/artifacts",
+  "dbPath": "./state/runtime.db",
+  "lockPath": "./state/dispatch.lock",
+  "defaultProfile": "proving-claude",
+  "defaultAdapter": "iris-placeholder",
+  "maxAttempts": 3,
+  "retryBackoffSeconds": 60,
+  "profiles": {
+    "proving-claude": "../../profiles/proving-claude/profile.json",
+    "email-handler": "../../profiles/email-handler/profile.json"
+  },
+  "adapters": {
+    "iris-placeholder": {
+      "mode": "script",
+      "command": "../../scripts/aibtc-heartbeat-wrapper.sh",
+      "timeoutMs": 60000,
+      "workingDir": "../..",
+      "retry_hint_service": "aibtc"
+    }
+  }
+}
