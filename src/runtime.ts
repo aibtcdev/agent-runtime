@@ -1,6 +1,8 @@
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import path from "node:path";
+import { ensureMemoryLayout, appendRecentLog, appendDeadEnd } from "./memory";
+import type { DeadEndEntry } from "./memory";
 import type { Database } from "bun:sqlite";
 import { appendLog } from "./logger";
 import { compileBundle, renderPromptFromPersistedBundle } from "./context";
@@ -17,7 +19,7 @@ import {
   updateAttemptAdapter
 } from "./db";
 import { enqueueDueSchedules } from "./schedules";
-import type { CanonicalOutcome, TaskAttemptRecord, RuntimeConfig } from "./types";
+import type { CanonicalOutcome, TaskAttemptRecord, TaskRecord, RuntimeConfig } from "./types";
 import { normalizeCanonicalOutcome, verifyCompletedTaskOutcome, verifyTaskInputArtifacts } from "./validation";
 import { runVerification } from "./verification";
 import { evaluateActiveWorkflows } from "./workflow-runtime";
@@ -112,6 +114,34 @@ function releaseLock(fd: number, lockPath: string): void {
   unlinkSync(lockPath);
 }
 
+function getMemoryDir(config: RuntimeConfig): string {
+  return path.join(config.stateDir, "memory");
+}
+
+function writeRecentLogEntry(config: RuntimeConfig, task: TaskRecord, outcome: CanonicalOutcome): void {
+  try {
+    appendRecentLog(getMemoryDir(config), {
+      ts: new Date().toISOString(),
+      taskId: task.task_id,
+      status: outcome.status,
+      subject: task.subject,
+      operatorSummary: outcome.operator_summary,
+      lessonTopic: task.lesson_topic ?? null
+    });
+  } catch {
+    // non-fatal: memory writes never block dispatch
+  }
+}
+
+function maybeWriteDeadEnd(config: RuntimeConfig, task: TaskRecord, outcome: CanonicalOutcome): void {
+  if (!outcome.dead_end) return;
+  try {
+    appendDeadEnd(getMemoryDir(config), outcome.dead_end as DeadEndEntry);
+  } catch {
+    // non-fatal
+  }
+}
+
 function resolveAttemptPaths(
   diagnostics: Record<string, unknown> | undefined,
   fallbackPromptPath: string
@@ -161,6 +191,7 @@ export async function runOnce(db: Database, config: RuntimeConfig): Promise<Reco
 
     if (!bootPrepared) {
       reclaimRunningWorkOnBoot(db, runtimeSession.runnerId);
+      ensureMemoryLayout(getMemoryDir(config));
       bootPrepared = true;
     }
 
@@ -210,6 +241,7 @@ export async function runOnce(db: Database, config: RuntimeConfig): Promise<Reco
         retryClass: "permanent",
         diagnostics: { reason: "input_verification_failed", input_issues: inputIssues }
       });
+      writeRecentLogEntry(config, task, blockedOutcome);
       return { ok: false, status: "blocked", task_id: task.task_id, input_issues: inputIssues };
     }
 
@@ -235,6 +267,7 @@ export async function runOnce(db: Database, config: RuntimeConfig): Promise<Reco
         retryClass: "permanent",
         diagnostics: { reason: "profile_load_failed", error: message }
       });
+      writeRecentLogEntry(config, task, blockedOutcome);
       return { ok: false, status: "blocked", task_id: task.task_id };
     }
 
@@ -259,6 +292,8 @@ export async function runOnce(db: Database, config: RuntimeConfig): Promise<Reco
         retryClass: "permanent",
         diagnostics: { reason: "adapter_not_found", adapter_id: requestedAdapterId }
       });
+      writeRecentLogEntry(config, task, outcome);
+      maybeWriteDeadEnd(config, task, outcome);
       return { ok: false, status: "permanent_failure", task_id: task.task_id };
     }
 
@@ -324,6 +359,7 @@ export async function runOnce(db: Database, config: RuntimeConfig): Promise<Reco
         retryClass: "permanent",
         diagnostics: { reason: "bundle_compile_failed", error: message }
       });
+      writeRecentLogEntry(config, task, blockedOutcome);
       return { ok: false, status: "blocked", task_id: task.task_id };
     }
 
@@ -403,6 +439,7 @@ export async function runOnce(db: Database, config: RuntimeConfig): Promise<Reco
         diagnostics: executionResult.diagnostics,
         ...attemptPaths
       });
+      writeRecentLogEntry(config, task, blockedOutcome);
       return { ok: false, status: "blocked", task_id: task.task_id, attempt_id: attempt.attempt_id };
     }
 
@@ -425,6 +462,8 @@ export async function runOnce(db: Database, config: RuntimeConfig): Promise<Reco
         diagnostics: executionResult.diagnostics,
         ...attemptPaths
       });
+      writeRecentLogEntry(config, task, failedOutcome);
+      maybeWriteDeadEnd(config, task, failedOutcome);
       return { ok: false, status: "permanent_failure", task_id: task.task_id, attempt_id: attempt.attempt_id };
     }
 
@@ -501,6 +540,7 @@ export async function runOnce(db: Database, config: RuntimeConfig): Promise<Reco
         },
         ...attemptPaths
       });
+      writeRecentLogEntry(config, task, blockedOutcome);
       return {
         ok: false,
         status: "blocked",
@@ -586,6 +626,8 @@ export async function runOnce(db: Database, config: RuntimeConfig): Promise<Reco
       diagnostics: executionResult.diagnostics,
       ...attemptPaths
     });
+    writeRecentLogEntry(config, task, outcome);
+    maybeWriteDeadEnd(config, task, outcome);
     return { ok: true, status: outcome.status, task_id: task.task_id, attempt_id: attempt.attempt_id };
   } finally {
     if (lockFd !== null) {

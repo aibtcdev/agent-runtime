@@ -267,7 +267,8 @@ function rowToTask(row: Record<string, unknown>): TaskRecord {
     verification_cmd: row.verification_cmd ? String(row.verification_cmd) : null,
     verification_timeout_ms: row.verification_timeout_ms != null ? Number(row.verification_timeout_ms) : 30000,
     verified_at: row.verified_at ? String(row.verified_at) : null,
-    verification_attempts: row.verification_attempts != null ? Number(row.verification_attempts) : 0
+    verification_attempts: row.verification_attempts != null ? Number(row.verification_attempts) : 0,
+    lesson_topic: row.lesson_topic ? String(row.lesson_topic) : null
   };
 }
 
@@ -360,15 +361,16 @@ export function enqueueTask(db: Database, config: RuntimeConfig, input: TaskInpu
     verification_cmd: input.verification_cmd ?? null,
     verification_timeout_ms: input.verification_timeout_ms ?? 30000,
     verified_at: null,
-    verification_attempts: 0
+    verification_attempts: 0,
+    lesson_topic: input.lesson_topic ?? null
   };
 
   db.query(`
     INSERT INTO tasks (
       task_id, kind, source, subject, description, priority, payload_json, requested_profile, requested_adapter,
       status, created_at, updated_at, attempt_count, max_attempts, available_at,
-      verification_cmd, verification_timeout_ms
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      verification_cmd, verification_timeout_ms, lesson_topic
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     task.task_id,
     task.kind,
@@ -386,7 +388,8 @@ export function enqueueTask(db: Database, config: RuntimeConfig, input: TaskInpu
     task.max_attempts,
     task.available_at,
     task.verification_cmd,
-    task.verification_timeout_ms
+    task.verification_timeout_ms,
+    task.lesson_topic
   );
 
   recordEvent(db, "task_enqueued", task.task_id, { kind: task.kind, source: task.source });

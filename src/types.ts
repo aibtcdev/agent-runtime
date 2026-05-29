@@ -103,6 +103,7 @@ export type TaskInput = {
   };
   verification_cmd?: string;
   verification_timeout_ms?: number;
+  lesson_topic?: string;
 };
 
 export type TaskRecord = {
@@ -129,6 +130,7 @@ export type TaskRecord = {
   verification_timeout_ms: number;
   verified_at: string | null;
   verification_attempts: number;
+  lesson_topic: string | null;
 };
 
 export type TaskAttemptRecord = {
@@ -210,6 +212,7 @@ export type CanonicalOutcome = {
   raw_output?: string;
   retry_after_seconds?: number;
   retry_hint_source?: string;
+  dead_end?: import("./memory").DeadEndEntry;
 };
 
 export type Workflow = {

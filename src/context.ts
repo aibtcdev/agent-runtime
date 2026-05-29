@@ -6,6 +6,7 @@ import canonicalize from "canonicalize";
 import type { Database } from "bun:sqlite";
 import { getWorkflowById } from "./db";
 import type { AdapterConfig, BundleArtifactRecord, Profile, ReplayGrade, TaskRecord, RuntimeConfig } from "./types";
+import { loadLessonsForTopic } from "./memory";
 
 const MAX_PAYLOAD_CHARS = 4000;
 
@@ -56,7 +57,8 @@ function buildBundleTaskSnapshot(task: TaskRecord): Record<string, unknown> {
     requested_profile: task.requested_profile,
     requested_adapter: task.requested_adapter,
     created_at: task.created_at,
-    max_attempts: task.max_attempts
+    max_attempts: task.max_attempts,
+    lesson_topic: task.lesson_topic
   };
 }
 
@@ -513,6 +515,11 @@ export async function compileBundle(input: CompileBundleInput): Promise<{
   const workspace = detectWorkspace(input.adapterConfig);
   const replayGrade = deriveReplayGrade(input.adapterConfig, workspace, externalInputs);
   const taskSnapshot = buildBundleTaskSnapshot(input.task);
+
+  const lessonsBundle = input.task.lesson_topic
+    ? loadLessonsForTopic(path.join(input.config.stateDir, "memory"), input.task.lesson_topic)
+    : null;
+
   const datePrefix = createdAt.slice(0, 10);
   const relativePath = path.posix.join("bundles", datePrefix, `${bundleId}.json`);
   const promptRelativePath = path.posix.join("bundles", datePrefix, `${bundleId}.prompt.txt`);
@@ -574,7 +581,14 @@ export async function compileBundle(input: CompileBundleInput): Promise<{
     external_inputs: externalInputs,
     prompt: {
       rendered_text: promptText
-    }
+    },
+    lessons: lessonsBundle
+      ? {
+          family: input.task.lesson_topic,
+          patterns: lessonsBundle.patterns,
+          dead_ends: lessonsBundle.deadEnds
+        }
+      : null
   };
 
   const canonicalHashBasis = canonicalize({

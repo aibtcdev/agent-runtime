@@ -80,6 +80,17 @@ const migrations: Migration[] = [
         db.exec("ALTER TABLE task_attempts ADD COLUMN verification_stdout_path TEXT");
       }
     }
+  },
+  {
+    id: "0004_lessons_layer",
+    description: "RFC 0009 Phase 1: lesson_topic column on tasks",
+    apply: (db) => {
+      const taskColumns = db.query("PRAGMA table_info(tasks)").all() as Array<{ name: string }>;
+      const taskColumnNames = new Set(taskColumns.map((c) => c.name));
+      if (!taskColumnNames.has("lesson_topic")) {
+        db.exec("ALTER TABLE tasks ADD COLUMN lesson_topic TEXT");
+      }
+    }
   }
 ];
 
