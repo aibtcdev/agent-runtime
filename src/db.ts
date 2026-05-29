@@ -263,7 +263,11 @@ function rowToTask(row: Record<string, unknown>): TaskRecord {
     started_at: row.started_at ? String(row.started_at) : null,
     finished_at: row.finished_at ? String(row.finished_at) : null,
     outcome: row.outcome_json ? (JSON.parse(String(row.outcome_json)) as CanonicalOutcome) : null,
-    last_error: row.last_error ? String(row.last_error) : null
+    last_error: row.last_error ? String(row.last_error) : null,
+    verification_cmd: row.verification_cmd ? String(row.verification_cmd) : null,
+    verification_timeout_ms: row.verification_timeout_ms != null ? Number(row.verification_timeout_ms) : 30000,
+    verified_at: row.verified_at ? String(row.verified_at) : null,
+    verification_attempts: row.verification_attempts != null ? Number(row.verification_attempts) : 0
   };
 }
 
@@ -285,7 +289,9 @@ function rowToTaskAttempt(row: Record<string, unknown>): TaskAttemptRecord {
     stdout_path: row.stdout_path ? String(row.stdout_path) : null,
     stderr_path: row.stderr_path ? String(row.stderr_path) : null,
     result_path: row.result_path ? String(row.result_path) : null,
-    diagnostics: row.diagnostics_json ? (JSON.parse(String(row.diagnostics_json)) as Record<string, unknown>) : null
+    diagnostics: row.diagnostics_json ? (JSON.parse(String(row.diagnostics_json)) as Record<string, unknown>) : null,
+    verification_exit_status: row.verification_exit_status != null ? Number(row.verification_exit_status) : null,
+    verification_stdout_path: row.verification_stdout_path ? String(row.verification_stdout_path) : null
   };
 }
 
@@ -308,7 +314,26 @@ function rowToBundle(row: Record<string, unknown>): BundleArtifactRecord {
   };
 }
 
+// RFC 0007 §Invariant 7: validate verification_cmd inline to avoid circular dependency.
+function checkVerificationCmd(cmd: string | null | undefined): void {
+  if (!cmd) { return; }
+  let inSingle = false;
+  let inDouble = false;
+  for (let i = 0; i < cmd.length; i++) {
+    const ch = cmd[i];
+    if (ch === "'" && !inDouble) { inSingle = !inSingle; continue; }
+    if (ch === '"' && !inSingle) { inDouble = !inDouble; continue; }
+    if (inSingle || inDouble) { continue; }
+    if (ch === ";" || ch === "|" || (ch === "&" && cmd[i + 1] === "&")) {
+      throw new Error(
+        "verification_cmd must not contain shell composition operators (&&, ;, |) at the top level; wrap in a script file instead"
+      );
+    }
+  }
+}
+
 export function enqueueTask(db: Database, config: RuntimeConfig, input: TaskInput): TaskRecord {
+  checkVerificationCmd(input.verification_cmd);
   const timestamp = nowIso();
   const availableAt = resolveAvailableAt(input, timestamp);
   const taskId = crypto.randomUUID();
@@ -331,14 +356,19 @@ export function enqueueTask(db: Database, config: RuntimeConfig, input: TaskInpu
     started_at: null,
     finished_at: null,
     outcome: null,
-    last_error: null
+    last_error: null,
+    verification_cmd: input.verification_cmd ?? null,
+    verification_timeout_ms: input.verification_timeout_ms ?? 30000,
+    verified_at: null,
+    verification_attempts: 0
   };
 
   db.query(`
     INSERT INTO tasks (
       task_id, kind, source, subject, description, priority, payload_json, requested_profile, requested_adapter,
-      status, created_at, updated_at, attempt_count, max_attempts, available_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      status, created_at, updated_at, attempt_count, max_attempts, available_at,
+      verification_cmd, verification_timeout_ms
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     task.task_id,
     task.kind,
@@ -354,7 +384,9 @@ export function enqueueTask(db: Database, config: RuntimeConfig, input: TaskInpu
     task.updated_at,
     task.attempt_count,
     task.max_attempts,
-    task.available_at
+    task.available_at,
+    task.verification_cmd,
+    task.verification_timeout_ms
   );
 
   recordEvent(db, "task_enqueued", task.task_id, { kind: task.kind, source: task.source });
@@ -503,7 +535,9 @@ export function claimNextTask(db: Database, runnerId: string): ClaimedTaskRecord
       stdout_path: null,
       stderr_path: null,
       result_path: null,
-      diagnostics: null
+      diagnostics: null,
+      verification_exit_status: null,
+      verification_stdout_path: null
     };
 
     db.query(`
@@ -852,6 +886,31 @@ export function rescheduleTask(db: Database, config: RuntimeConfig, taskId: stri
     errorMessage,
     exitStatus: "error",
     retryClass: "retryable"
+  });
+}
+
+export function recordVerificationOutcome(
+  db: Database,
+  taskId: string,
+  attemptId: string,
+  result: { exitStatus: number; stdoutPath: string | null; passed: boolean }
+): void {
+  const timestamp = nowIso();
+  withImmediateTransaction(db, () => {
+    db.query(`
+      UPDATE task_attempts
+      SET verification_exit_status = ?,
+          verification_stdout_path = ?
+      WHERE attempt_id = ?
+    `).run(result.exitStatus, result.stdoutPath, attemptId);
+
+    db.query(`
+      UPDATE tasks
+      SET verification_attempts = verification_attempts + 1,
+          verified_at = CASE WHEN ? = 1 THEN ? ELSE verified_at END,
+          updated_at = ?
+      WHERE task_id = ?
+    `).run(result.passed ? 1 : 0, timestamp, timestamp, taskId);
   });
 }
 

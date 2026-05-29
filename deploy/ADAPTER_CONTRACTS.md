@@ -73,6 +73,36 @@ Example `extends` target from that file:
 
 That avoids deleting the real host override during repo syncs.
 
+## Verification Gate Contract (RFC 0007 Phase 1)
+
+Every adapter that returns `status=completed` is subject to the verification gate before the runtime promotes the task to `completed`.
+
+### Runtime behavior
+
+1. After the adapter exits and CanonicalOutcome is parsed, the runtime calls `runVerification(db, config, task, attempt)`.
+2. If `task.verification_cmd` is null (Phase 1): the task transitions to `completed` with `outcome: "skipped"`.
+3. If `task.verification_cmd` is set: it is executed as a subprocess with `sh -c <cmd>` in the adapter's `workingDir` (or runtime working directory if not set).
+4. Exit 0 → task transitions to `completed`, `verified_at` is set on the task.
+5. Exit non-zero → task transitions to `retryable_failure` with retry class `verification_failed`.
+6. Timeout (default 30s, configurable via `task.verification_timeout_ms`) → `retryable_failure` with retry class `verification_timeout`.
+7. Shell composition operators (`&&`, `;`, `|`) are forbidden in `verification_cmd` at the top level. Use a script file under `scripts/` instead.
+
+### Adapter responsibilities
+
+- Adapters MUST NOT skip the verification gate.
+- Verification stdout is captured to `state/verifications/<attempt_id>.stdout` for replay grading.
+- `task_attempts.verification_exit_status` and `task_attempts.verification_stdout_path` are populated for every verification run.
+- Verification commands MUST be deterministic and MUST NOT make LLM calls.
+
+### Working directory contract
+
+The verification command runs in the same `workingDir` as the adapter, per the `deploy/ADAPTER_CONTRACTS.md` host-local wiring section. Relative paths in `verification_cmd` are resolved against that directory.
+
+### Phase 2 note
+
+Phase 1 (current): null `verification_cmd` is permitted for any task kind — the gate is a soft launch.
+Phase 2: allowlist clamps to `chore`, `notify`, `observe`; all other task kinds will require `verification_cmd`.
+
 ## Proof Status
 
 As of 2026-04-23 on `dev@192.168.1.16`:

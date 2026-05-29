@@ -19,6 +19,7 @@ import {
 import { enqueueDueSchedules } from "./schedules";
 import type { CanonicalOutcome, TaskAttemptRecord, RuntimeConfig } from "./types";
 import { normalizeCanonicalOutcome, verifyCompletedTaskOutcome, verifyTaskInputArtifacts } from "./validation";
+import { runVerification } from "./verification";
 import { evaluateActiveWorkflows } from "./workflow-runtime";
 import { writeArtifactIfNeeded } from "./artifacts";
 import { extractRetryHint } from "./retry-hints";
@@ -507,6 +508,72 @@ export async function runOnce(db: Database, config: RuntimeConfig): Promise<Reco
         attempt_id: attempt.attempt_id,
         verification_issues: verificationIssues
       };
+    }
+
+    if (outcome.status === "completed") {
+      const verificationResult = await runVerification(db, config, task, attempt);
+      if (verificationResult.outcome === "failed") {
+        const failedOutcome: CanonicalOutcome = {
+          status: "retryable_failure",
+          operator_summary: `Verification failed (exit ${verificationResult.exitStatus}): verification_cmd returned non-zero`,
+          machine_status: "needs_retry",
+          raw_output: executionResult.rawOutput,
+          ...withAttemptContext(attempt, compiledBundle.bundleRecord)
+        };
+        rescheduleTaskAttempt(db, config, {
+          taskId: task.task_id,
+          attemptId: attempt.attempt_id,
+          runnerId: runtimeSession.runnerId,
+          errorMessage: failedOutcome.operator_summary,
+          exitStatus: "error",
+          retryClass: verificationResult.retryClass,
+          diagnostics: {
+            ...(executionResult.diagnostics ?? {}),
+            reason: "verification_failed",
+            verification_exit_status: verificationResult.exitStatus,
+            verification_stdout_path: verificationResult.stdoutPath
+          },
+          ...attemptPaths
+        });
+        return {
+          ok: false,
+          status: "retryable_failure",
+          task_id: task.task_id,
+          attempt_id: attempt.attempt_id,
+          verification_outcome: "failed"
+        };
+      }
+
+      if (verificationResult.outcome === "timed_out") {
+        const timedOutOutcome: CanonicalOutcome = {
+          status: "retryable_failure",
+          operator_summary: `Verification timed out after ${task.verification_timeout_ms}ms`,
+          machine_status: "needs_retry",
+          raw_output: executionResult.rawOutput,
+          ...withAttemptContext(attempt, compiledBundle.bundleRecord)
+        };
+        rescheduleTaskAttempt(db, config, {
+          taskId: task.task_id,
+          attemptId: attempt.attempt_id,
+          runnerId: runtimeSession.runnerId,
+          errorMessage: timedOutOutcome.operator_summary,
+          exitStatus: "timeout",
+          retryClass: verificationResult.retryClass,
+          diagnostics: {
+            ...(executionResult.diagnostics ?? {}),
+            reason: "verification_timeout",
+            verification_timeout_ms: task.verification_timeout_ms
+          },
+          ...attemptPaths
+        });
+        return {
+          ok: false,
+          status: "retryable_failure",
+          task_id: task.task_id,
+          attempt_id: attempt.attempt_id,
+          verification_outcome: "timed_out"
+        };
+      }
     }
 
     finalizeTaskAttempt(db, {

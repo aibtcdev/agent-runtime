@@ -101,6 +101,8 @@ export type TaskInput = {
   schedule?: {
     delay_minutes?: number;
   };
+  verification_cmd?: string;
+  verification_timeout_ms?: number;
 };
 
 export type TaskRecord = {
@@ -123,6 +125,10 @@ export type TaskRecord = {
   finished_at: string | null;
   outcome: CanonicalOutcome | null;
   last_error: string | null;
+  verification_cmd: string | null;
+  verification_timeout_ms: number;
+  verified_at: string | null;
+  verification_attempts: number;
 };
 
 export type TaskAttemptRecord = {
@@ -143,6 +149,8 @@ export type TaskAttemptRecord = {
   stderr_path: string | null;
   result_path: string | null;
   diagnostics: Record<string, unknown> | null;
+  verification_exit_status: number | null;
+  verification_stdout_path: string | null;
 };
 
 export type BundleArtifactRecord = {

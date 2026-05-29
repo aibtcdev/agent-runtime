@@ -51,6 +51,35 @@ const migrations: Migration[] = [
           ON sensor_events (sensor_id, event_id);
       `);
     }
+  },
+  {
+    id: "0003_verification_gate",
+    description: "RFC 0007 Phase 1: verification_cmd contract on tasks and task_attempts",
+    apply: (db) => {
+      const taskColumns = db.query("PRAGMA table_info(tasks)").all() as Array<{ name: string }>;
+      const taskColumnNames = new Set(taskColumns.map((c) => c.name));
+      if (!taskColumnNames.has("verification_cmd")) {
+        db.exec("ALTER TABLE tasks ADD COLUMN verification_cmd TEXT");
+      }
+      if (!taskColumnNames.has("verification_timeout_ms")) {
+        db.exec("ALTER TABLE tasks ADD COLUMN verification_timeout_ms INTEGER DEFAULT 30000");
+      }
+      if (!taskColumnNames.has("verified_at")) {
+        db.exec("ALTER TABLE tasks ADD COLUMN verified_at TEXT");
+      }
+      if (!taskColumnNames.has("verification_attempts")) {
+        db.exec("ALTER TABLE tasks ADD COLUMN verification_attempts INTEGER DEFAULT 0");
+      }
+
+      const attemptColumns = db.query("PRAGMA table_info(task_attempts)").all() as Array<{ name: string }>;
+      const attemptColumnNames = new Set(attemptColumns.map((c) => c.name));
+      if (!attemptColumnNames.has("verification_exit_status")) {
+        db.exec("ALTER TABLE task_attempts ADD COLUMN verification_exit_status INTEGER");
+      }
+      if (!attemptColumnNames.has("verification_stdout_path")) {
+        db.exec("ALTER TABLE task_attempts ADD COLUMN verification_stdout_path TEXT");
+      }
+    }
   }
 ];
 
