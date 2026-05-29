@@ -1,0 +1,18 @@
+{
+  "extends": "./runtime.loom.json",
+  "defaultAdapter": "hermes-openrouter",
+  "adapters": {
+    "hermes-openrouter": {
+      "mode": "agent-cli",
+      "driver": "claude-code",
+      "command": "/home/dev/.local/bin/claude",
+      "model": "anthropic/claude-sonnet-4-5",
+      "timeoutMs": 900000,
+      "workingDir": ".",
+      "envFile": "/home/dev/.config/agent-runtime/loom.openrouter.env",
+      "settingsFile": "/home/dev/.claude/settings.json",
+      "providerBaseUrl": "https://openrouter.ai/api/v1",
+      "autonomy": "trusted-vm"
+    }
+  }
+}

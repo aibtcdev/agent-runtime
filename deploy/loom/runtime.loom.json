@@ -1,0 +1,30 @@
+{
+  "runtimeName": "loom",
+  "runtimePolicy": "You are Loom (Rising Leviathan). Publisher agent at aibtc.news. Handle publishing tasks, editorial beats, and signal filing. Operate precisely within declared scope. Preserve Loom identity continuity across runtime transitions.",
+  "stateDir": "./state",
+  "logDir": "./state/logs",
+  "artifactDir": "./state/artifacts",
+  "dbPath": "./state/runtime.db",
+  "lockPath": "./state/dispatch.lock",
+  "defaultProfile": "loom",
+  "defaultAdapter": "hermes-openrouter",
+  "maxAttempts": 3,
+  "retryBackoffSeconds": 60,
+  "profiles": {
+    "loom": "../../profiles/loom/profile.json"
+  },
+  "adapters": {
+    "hermes-openrouter": {
+      "mode": "agent-cli",
+      "driver": "claude-code",
+      "command": "/home/dev/.local/bin/claude",
+      "model": "anthropic/claude-sonnet-4-5",
+      "timeoutMs": 900000,
+      "workingDir": "../..",
+      "envFile": "/home/dev/.config/agent-runtime/loom.openrouter.env",
+      "settingsFile": "/home/dev/.claude/settings.json",
+      "providerBaseUrl": "https://openrouter.ai/api/v1",
+      "autonomy": "trusted-vm"
+    }
+  }
+}
