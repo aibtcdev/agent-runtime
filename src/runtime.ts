@@ -27,6 +27,8 @@ import {
   resolveSubstrateConfig,
   createSubstrateConnection,
   runSubstrateIntakeTick,
+  runSubstrateWriteBack,
+  runSubstrateLeaseRecovery,
   type SubstrateDb,
 } from "./substrate";
 
@@ -48,11 +50,14 @@ let bootPrepared = false;
 // ---------------------------------------------------------------------------
 let substrateDb: SubstrateDb | null = null;
 let substrateDbInitialized = false;
+// Lease recovery: track last run time for cadence enforcement.
+let lastLeaseRecoveryAt = 0;
 
 export function resetRuntimeForTests(): void {
   bootPrepared = false;
   substrateDb = null;
   substrateDbInitialized = false;
+  lastLeaseRecoveryAt = 0;
 }
 
 export function getRunnerId(): string {
@@ -226,6 +231,17 @@ export async function runOnce(db: Database, config: RuntimeConfig): Promise<Reco
             task_id: tickResult.taskId,
             epoch: tickResult.epochUsed,
           });
+        }
+
+        // Lease recovery: run on the nominated owner at configured cadence (default 60s).
+        // Only one slot should be the owner — set isLeaseRecoveryOwner=true in config.
+        if (subConfig.isLeaseRecoveryOwner) {
+          const cadenceSecs = subConfig.leaseRecoveryCadenceSecs ?? 60;
+          const nowSecs = Math.floor(Date.now() / 1000);
+          if (nowSecs - lastLeaseRecoveryAt >= cadenceSecs) {
+            lastLeaseRecoveryAt = nowSecs;
+            await runSubstrateLeaseRecovery(substrateDb);
+          }
         }
       }
     }
@@ -568,6 +584,17 @@ export async function runOnce(db: Database, config: RuntimeConfig): Promise<Reco
       diagnostics: executionResult.diagnostics,
       ...attemptPaths
     });
+
+    // ---------------------------------------------------------------------------
+    // Substrate write-back: if this task originated from a substrate job claim,
+    // complete or fail the substrate job with epoch-fenced semantics.
+    // Stale-lease executors that wake up after recovery hold an outdated epoch
+    // and their write-back becomes a logged no-op (not a stomp).
+    // ---------------------------------------------------------------------------
+    if (substrateDb && task.source.startsWith("substrate:")) {
+      await runSubstrateWriteBack(substrateDb, task, outcome);
+    }
+
     return { ok: true, status: outcome.status, task_id: task.task_id, attempt_id: attempt.attempt_id };
   } finally {
     if (lockFd !== null) {
