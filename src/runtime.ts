@@ -23,6 +23,14 @@ import { evaluateActiveWorkflows } from "./workflow-runtime";
 import { writeArtifactIfNeeded } from "./artifacts";
 import { extractRetryHint } from "./retry-hints";
 import { selectAdapterWithFallback } from "./adapter-probe";
+import {
+  resolveSubstrateConfig,
+  createSubstrateConnection,
+  runSubstrateIntakeTick,
+  runSubstrateWriteBack,
+  runSubstrateLeaseRecovery,
+  type SubstrateDb,
+} from "./substrate";
 
 type RuntimeSession = {
   runnerId: string;
@@ -36,8 +44,20 @@ const runtimeSession: RuntimeSession = {
 
 let bootPrepared = false;
 
+// ---------------------------------------------------------------------------
+// Substrate connection cache — created lazily on first tick where substrate
+// is enabled and configured. Re-used across ticks (postgres.js connection pool).
+// ---------------------------------------------------------------------------
+let substrateDb: SubstrateDb | null = null;
+let substrateDbInitialized = false;
+// Lease recovery: track last run time for cadence enforcement.
+let lastLeaseRecoveryAt = 0;
+
 export function resetRuntimeForTests(): void {
   bootPrepared = false;
+  substrateDb = null;
+  substrateDbInitialized = false;
+  lastLeaseRecoveryAt = 0;
 }
 
 export function getRunnerId(): string {
@@ -179,6 +199,54 @@ export async function runOnce(db: Database, config: RuntimeConfig): Promise<Reco
         workflows_evaluated: workflowResult.workflowsEvaluated,
         tasks_created: workflowResult.tasksCreated
       });
+    }
+
+    // ---------------------------------------------------------------------------
+    // Substrate intake: opt-in dispatch from shared Postgres job queue.
+    // Disabled by default — only active when config.substrate.enabled === true.
+    // If substrate is configured, claim one job and enqueue it as a local task.
+    // The local task's source will be "substrate:<jobId>" so the write-back hook
+    // can complete/fail the substrate job after execution.
+    // ---------------------------------------------------------------------------
+    const subConfig = resolveSubstrateConfig(config);
+    if (subConfig) {
+      // Lazy-init the substrate DB connection (credential resolved on success;
+      // re-attempted next tick on failure so a transient credential / host
+      // read miss does not permanently disable substrate intake).
+      if (!substrateDbInitialized) {
+        try {
+          substrateDb = await createSubstrateConnection(subConfig);
+          substrateDbInitialized = true; // only mark initialized on success
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : String(error);
+          console.error(`[substrate] skip reason=credential-fail error=${msg}`);
+          substrateDb = null;
+          // substrateDbInitialized stays false — next tick retries.
+        }
+      }
+
+      if (substrateDb) {
+        const tickResult = await runSubstrateIntakeTick(substrateDb, subConfig, db, config);
+        if (tickResult.claimed) {
+          await appendLog(config, {
+            event: "substrate_intake",
+            job_id: tickResult.jobId,
+            task_id: tickResult.taskId,
+            epoch: tickResult.epochUsed,
+          });
+        }
+
+        // Lease recovery: run on the nominated owner at configured cadence (default 60s).
+        // Only one slot should be the owner — set isLeaseRecoveryOwner=true in config.
+        if (subConfig.isLeaseRecoveryOwner) {
+          const cadenceSecs = subConfig.leaseRecoveryCadenceSecs ?? 60;
+          const nowSecs = Math.floor(Date.now() / 1000);
+          if (nowSecs - lastLeaseRecoveryAt >= cadenceSecs) {
+            lastLeaseRecoveryAt = nowSecs;
+            await runSubstrateLeaseRecovery(substrateDb);
+          }
+        }
+      }
     }
 
     const claim = claimNextTask(db, runtimeSession.runnerId);
@@ -519,6 +587,17 @@ export async function runOnce(db: Database, config: RuntimeConfig): Promise<Reco
       diagnostics: executionResult.diagnostics,
       ...attemptPaths
     });
+
+    // ---------------------------------------------------------------------------
+    // Substrate write-back: if this task originated from a substrate job claim,
+    // complete or fail the substrate job with epoch-fenced semantics.
+    // Stale-lease executors that wake up after recovery hold an outdated epoch
+    // and their write-back becomes a logged no-op (not a stomp).
+    // ---------------------------------------------------------------------------
+    if (substrateDb && task.source.startsWith("substrate:")) {
+      await runSubstrateWriteBack(substrateDb, task, outcome);
+    }
+
     return { ok: true, status: outcome.status, task_id: task.task_id, attempt_id: attempt.attempt_id };
   } finally {
     if (lockFd !== null) {

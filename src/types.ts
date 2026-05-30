@@ -12,6 +12,32 @@ export type AttemptExitStatus = "ok" | "error" | "timeout";
 export type AttemptRetryClass = "none" | "retryable" | "permanent";
 export type ReplayGrade = "inputs_frozen" | "best_effort" | "non_replayable_model";
 
+export type SubstrateConfig = {
+  // Substrate intake is opt-in per slot — disabled by default.
+  // Flipping enabled=true changes zero behavior on any slot unless all fields are set.
+  enabled: boolean;
+  // Credential id for the substrate DB password (NEVER plaintext).
+  // Resolved via the existing encrypted-credential pattern.
+  credential: string;
+  // Job kinds this slot handles (e.g. ["notch-task", "arc-task"]).
+  kinds: string[];
+  // This slot's identifier used in claimNextJob (e.g. "192.168.1.12").
+  slotId: string;
+  // Lease duration in seconds (default 300).
+  leaseSecs?: number;
+  // Connection params for the substrate Postgres (host/port/db/user).
+  // The password is resolved from the credential field above.
+  host?: string;
+  port?: number;
+  database?: string;
+  user?: string;
+  // releaseExpiredLeases cadence in seconds (default 60).
+  // Only one nominated owner should run this — not all slots.
+  leaseRecoveryCadenceSecs?: number;
+  // Set to true on the nominated lease-recovery owner (control-plane cron or one slot).
+  isLeaseRecoveryOwner?: boolean;
+};
+
 export type RuntimeConfig = {
   runtimeName: string;
   runtimePolicy: string;
@@ -26,6 +52,12 @@ export type RuntimeConfig = {
   retryBackoffSeconds: number;
   profiles: Record<string, string>;
   adapters: Record<string, AdapterConfig>;
+  // Opt-in substrate dispatch intake (Phase 5 — disabled by default).
+  // Note: this block is shallow-overridden by mergeRuntimeConfig (unlike profiles /
+  // adapters which deep-merge). Slots that extend a base and want to set only
+  // `isLeaseRecoveryOwner: true` must repeat the whole substrate block in their
+  // host config; a deep-merge here is a follow-up if that pattern becomes common.
+  substrate?: SubstrateConfig;
 };
 
 export type OllamaGenerateAdapterConfig = {

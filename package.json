@@ -16,6 +16,9 @@
     "typescript": "^6.0.2"
   },
   "dependencies": {
-    "canonicalize": "^3.0.0"
+    "canonicalize": "^3.0.0",
+    "@genesis-works/substrate-db": "file:../substrate-db",
+    "drizzle-orm": "0.45.2",
+    "postgres": "^3.4.9"
   }
 }
