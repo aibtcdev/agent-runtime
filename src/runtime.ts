@@ -23,6 +23,12 @@ import { evaluateActiveWorkflows } from "./workflow-runtime";
 import { writeArtifactIfNeeded } from "./artifacts";
 import { extractRetryHint } from "./retry-hints";
 import { selectAdapterWithFallback } from "./adapter-probe";
+import {
+  resolveSubstrateConfig,
+  createSubstrateConnection,
+  runSubstrateIntakeTick,
+  type SubstrateDb,
+} from "./substrate";
 
 type RuntimeSession = {
   runnerId: string;
@@ -36,8 +42,17 @@ const runtimeSession: RuntimeSession = {
 
 let bootPrepared = false;
 
+// ---------------------------------------------------------------------------
+// Substrate connection cache — created lazily on first tick where substrate
+// is enabled and configured. Re-used across ticks (postgres.js connection pool).
+// ---------------------------------------------------------------------------
+let substrateDb: SubstrateDb | null = null;
+let substrateDbInitialized = false;
+
 export function resetRuntimeForTests(): void {
   bootPrepared = false;
+  substrateDb = null;
+  substrateDbInitialized = false;
 }
 
 export function getRunnerId(): string {
@@ -179,6 +194,40 @@ export async function runOnce(db: Database, config: RuntimeConfig): Promise<Reco
         workflows_evaluated: workflowResult.workflowsEvaluated,
         tasks_created: workflowResult.tasksCreated
       });
+    }
+
+    // ---------------------------------------------------------------------------
+    // Substrate intake: opt-in dispatch from shared Postgres job queue.
+    // Disabled by default — only active when config.substrate.enabled === true.
+    // If substrate is configured, claim one job and enqueue it as a local task.
+    // The local task's source will be "substrate:<jobId>" so the write-back hook
+    // can complete/fail the substrate job after execution.
+    // ---------------------------------------------------------------------------
+    const subConfig = resolveSubstrateConfig(config);
+    if (subConfig) {
+      // Lazy-init the substrate DB connection (credential resolved once per process).
+      if (!substrateDbInitialized) {
+        substrateDbInitialized = true;
+        try {
+          substrateDb = await createSubstrateConnection(subConfig);
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : String(error);
+          console.error(`[substrate] skip reason=credential-fail error=${msg}`);
+          substrateDb = null;
+        }
+      }
+
+      if (substrateDb) {
+        const tickResult = await runSubstrateIntakeTick(substrateDb, subConfig, db, config);
+        if (tickResult.claimed) {
+          await appendLog(config, {
+            event: "substrate_intake",
+            job_id: tickResult.jobId,
+            task_id: tickResult.taskId,
+            epoch: tickResult.epochUsed,
+          });
+        }
+      }
     }
 
     const claim = claimNextTask(db, runtimeSession.runnerId);
