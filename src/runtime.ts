@@ -210,15 +210,18 @@ export async function runOnce(db: Database, config: RuntimeConfig): Promise<Reco
     // ---------------------------------------------------------------------------
     const subConfig = resolveSubstrateConfig(config);
     if (subConfig) {
-      // Lazy-init the substrate DB connection (credential resolved once per process).
+      // Lazy-init the substrate DB connection (credential resolved on success;
+      // re-attempted next tick on failure so a transient credential / host
+      // read miss does not permanently disable substrate intake).
       if (!substrateDbInitialized) {
-        substrateDbInitialized = true;
         try {
           substrateDb = await createSubstrateConnection(subConfig);
+          substrateDbInitialized = true; // only mark initialized on success
         } catch (error) {
           const msg = error instanceof Error ? error.message : String(error);
           console.error(`[substrate] skip reason=credential-fail error=${msg}`);
           substrateDb = null;
+          // substrateDbInitialized stays false — next tick retries.
         }
       }
 

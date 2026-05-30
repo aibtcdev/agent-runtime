@@ -53,6 +53,10 @@ export type RuntimeConfig = {
   profiles: Record<string, string>;
   adapters: Record<string, AdapterConfig>;
   // Opt-in substrate dispatch intake (Phase 5 — disabled by default).
+  // Note: this block is shallow-overridden by mergeRuntimeConfig (unlike profiles /
+  // adapters which deep-merge). Slots that extend a base and want to set only
+  // `isLeaseRecoveryOwner: true` must repeat the whole substrate block in their
+  // host config; a deep-merge here is a follow-up if that pattern becomes common.
   substrate?: SubstrateConfig;
 };
 
