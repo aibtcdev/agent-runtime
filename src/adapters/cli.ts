@@ -119,6 +119,18 @@ function buildClaudeArgs(request: ExecutionRequest, adapter: AgentCliAdapterConf
     args.push("--settings", adapter.settingsFile);
   }
 
+  // Profiles that declare no aibtc integration (e.g. council-lens-review, a
+  // read-only reasoning profile) must not load the user-level ~/.claude.json
+  // MCP servers. In `-p` mode the claude-code CLI spawns any configured stdio
+  // MCP server (e.g. `aibtc`) and then blocks on teardown waiting for it to
+  // exit — the process sits idle until the adapter timeout fires.
+  // `--strict-mcp-config` loads only `--mcp-config` sources (none here), so no
+  // MCP server starts and the process exits cleanly. The timeout path below is
+  // the backstop for hangs from any other cause.
+  if (request.profile?.integration_policies?.aibtc === "none") {
+    args.push("--strict-mcp-config");
+  }
+
   args.push(...mergeArgs(getDriverRequiredArgs(adapter), adapter.extraArgs));
   args.push(request.assembledContext);
   return args;
@@ -313,6 +325,33 @@ export function extractClaudeCodeResultText(stdoutText: string): string {
   return stdoutText;
 }
 
+/**
+ * Signal the child's entire process group, not just the direct child.
+ *
+ * CLI drivers (notably claude-code) spawn descendants — e.g. stdio MCP servers —
+ * that ignore a SIGTERM aimed only at the parent and keep its stdio pipes open.
+ * Because the run-once dispatcher reads those pipes, an un-reaped descendant
+ * keeps the parent process alive, which leaves the systemd oneshot service stuck
+ * in `activating` forever and freezes ALL dispatch for that agent. The child is
+ * spawned with `detached: true`, so it leads its own process group and a negative
+ * PID reaches the whole tree.
+ */
+function killProcessTree(child: ReturnType<typeof spawn>, signal: NodeJS.Signals): void {
+  if (typeof child.pid !== "number") {
+    return;
+  }
+  try {
+    process.kill(-child.pid, signal);
+  } catch {
+    // Group gone, or not a group leader — fall back to the direct child.
+    try {
+      child.kill(signal);
+    } catch {
+      /* already exited */
+    }
+  }
+}
+
 export async function executeWithAgentCli(request: ExecutionRequest): Promise<AdapterExecutionResult> {
   if (request.adapterConfig.mode !== "agent-cli") {
     throw new Error(`Invalid adapter mode for agent-cli execution: ${request.adapterConfig.mode}`);
@@ -336,7 +375,10 @@ export async function executeWithAgentCli(request: ExecutionRequest): Promise<Ad
     const child = spawn(invocation.command, invocation.args, {
       cwd: invocation.cwd,
       env: childEnv,
-      stdio: ["pipe", "pipe", "pipe"]
+      stdio: ["pipe", "pipe", "pipe"],
+      // Own process group so the timeout path can signal the whole tree
+      // (the CLI's MCP/tool subprocesses), not just the direct child.
+      detached: true
     });
 
     const stdoutChunks: Buffer[] = [];
@@ -347,7 +389,28 @@ export async function executeWithAgentCli(request: ExecutionRequest): Promise<Ad
         return;
       }
       settled = true;
-      child.kill("SIGTERM");
+      // Terminate the whole process group, then escalate to SIGKILL if it
+      // ignores SIGTERM, and detach the stdio pipes so a surviving descendant
+      // can never hold this dispatcher process (and thus the systemd oneshot
+      // service) open. Without this a hung child wedges all dispatch for the agent.
+      killProcessTree(child, "SIGTERM");
+      const sigkillTimer = setTimeout(() => killProcessTree(child, "SIGKILL"), 5000);
+      sigkillTimer.unref?.();
+      try {
+        child.stdout?.destroy();
+      } catch {
+        /* ignore */
+      }
+      try {
+        child.stderr?.destroy();
+      } catch {
+        /* ignore */
+      }
+      try {
+        child.unref();
+      } catch {
+        /* ignore */
+      }
       const stdoutText = Buffer.concat(stdoutChunks).toString("utf8");
       const stderrText = Buffer.concat(stderrChunks).toString("utf8");
       const lastMessage = readLastMessage(adapter, outputLastMessagePath, stdoutText, stderrText);
