@@ -22,6 +22,9 @@
 
 import { describe, test, expect, mock, beforeEach, afterEach, spyOn } from "bun:test";
 import { Database } from "bun:sqlite";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { openDb } from "./db";
 import type { RuntimeConfig, SubstrateConfig } from "./types";
 
@@ -53,6 +56,8 @@ import {
   resetSubstrateDbCache,
   normalizeEpoch,
   SubstrateModuleMissingError,
+  SubstrateModuleLoadError,
+  isSubstrateModuleNotFound,
   runSubstrateIntakeTick,
   runSubstrateWriteBack,
   runSubstrateLeaseRecovery,
@@ -295,16 +300,50 @@ describe("loadSubstrateDb", () => {
     await expect(loadSubstrateDb(async () => { throw err; })).rejects.toBeInstanceOf(SubstrateModuleMissingError);
   });
 
-  test("other load errors are rethrown as-is, not labelled module-missing", async () => {
+  test("other load errors are tagged module-load-error with the original as cause", async () => {
     const broken = new Error("SUBSTRATE_PG_URL is not set");
     const failed = loadSubstrateDb(async () => { throw broken; });
-    await expect(failed).rejects.toBe(broken);
+    await expect(failed).rejects.toBeInstanceOf(SubstrateModuleLoadError);
     await expect(failed).rejects.not.toBeInstanceOf(SubstrateModuleMissingError);
+    await expect(failed).rejects.toThrow(/SUBSTRATE_PG_URL is not set/);
+    await expect(failed).rejects.toMatchObject({ cause: broken });
 
     // A missing transitive dependency of an installed package is not "substrate-db missing".
     resetSubstrateDbCache();
     const transitive = new Error("Cannot find package 'pg-native' from '/x/node_modules/@genesis-works/substrate-db/dist/index.js'");
-    await expect(loadSubstrateDb(async () => { throw transitive; })).rejects.toBe(transitive);
+    const second = loadSubstrateDb(async () => { throw transitive; });
+    await expect(second).rejects.toBeInstanceOf(SubstrateModuleLoadError);
+    await expect(second).rejects.toMatchObject({ cause: transitive });
+  });
+
+  test("isSubstrateModuleNotFound recognises Bun's real rejection for a missing package", async () => {
+    // Bun hands import() a ResolveMessage here, which is not an Error and throws on foreign
+    // getters, so use the real thing. A different specifier is not covered by mock.module.
+    let caught: unknown;
+    try {
+      const other = "@genesis-works/definitely-not-installed-xyz";
+      await import(other);
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeDefined();
+    expect(() => isSubstrateModuleNotFound(caught)).not.toThrow();
+    expect(isSubstrateModuleNotFound(caught)).toBe(false); // a different package is not ours
+
+    // For our own package, import it for real in a subprocess started in an empty directory
+    // (outside this repo, where it is not installed and mock.module does not apply).
+    const dir = mkdtempSync(join(tmpdir(), "substrate-missing-"));
+    try {
+      const script = `
+        import { isSubstrateModuleNotFound } from ${JSON.stringify(join(import.meta.dir, "substrate"))};
+        try { await import("@genesis-works/substrate-db"); console.log("loaded"); }
+        catch (e) { console.log(isSubstrateModuleNotFound(e) ? "not-found" : "other: " + String(e)); }
+      `;
+      const proc = Bun.spawnSync([process.execPath, "-e", script], { cwd: dir, stderr: "pipe" });
+      expect(proc.stdout.toString().trim()).toBe("not-found");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

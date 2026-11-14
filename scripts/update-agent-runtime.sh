@@ -139,11 +139,21 @@ fi
 # `bun install` does not install, and installing it with `bun add` would rewrite package.json
 # and bun.lock (dirty tree, next `git pull --ff-only` refuses). On boxes with the sibling
 # checkout, add it with --no-save: node_modules only, tracked files stay untouched.
-# Non-fatal: services are already stopped here, and a broken sibling checkout must not leave
-# the agent down (a substrate-enabled agent reports module-missing in its own log instead).
+# Fatal only when this agent's config enables substrate (read with the runtime's own config
+# loader); otherwise a broken sibling checkout only warns, so the agent still restarts.
 if [[ -d ../substrate-db ]]; then
-  ~/.bun/bin/bun add --no-save ../substrate-db \
-    || echo "WARN: could not install ../substrate-db; continuing without it" >&2
+  substrate_enabled="$(~/.bun/bin/bun -e '
+    import { loadConfig } from "./src/config";
+    const { config } = await loadConfig(process.argv[1]);
+    console.log(config.substrate?.enabled === true ? "1" : "0");
+  ' "$config" 2>/dev/null || true)"
+  if ! ~/.bun/bin/bun add --no-save ../substrate-db; then
+    if [[ "$substrate_enabled" == "1" ]]; then
+      echo "ERROR: substrate is enabled in $config but ../substrate-db could not be installed" >&2
+      exit 1
+    fi
+    echo "WARN: could not install ../substrate-db; substrate is not enabled, continuing" >&2
+  fi
 fi
 ~/.bun/bin/bunx tsc --noEmit
 ~/.bun/bin/bun test

@@ -10,6 +10,7 @@
 //   [substrate] fail jobs.id=<id> epoch=<n> reason=<...>
 //   [substrate] lease-recovery released=<n>
 //   [substrate] skip reason=module-missing error=<...>       (@genesis-works/substrate-db not installed)
+//   [substrate] skip reason=module-load-error error=<...>    (package installed but throws while loading)
 //   [substrate] skip reason=credential-fail error=<...>
 //   [substrate] skip reason=db-unreachable error=<...>
 //   [substrate] skip reason=job-parse-fail error=<...> jobs.id=<id>
@@ -109,13 +110,23 @@ export class SubstrateModuleMissingError extends Error {
   }
 }
 
-function isSubstrateModuleNotFound(err: unknown): boolean {
-  if (!(err instanceof Error)) return false;
-  const code = (err as { code?: unknown }).code;
+/** Thrown when @genesis-works/substrate-db is installed but fails while loading (reason=module-load-error). */
+export class SubstrateModuleLoadError extends Error {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = "SubstrateModuleLoadError";
+  }
+}
+
+export function isSubstrateModuleNotFound(err: unknown): boolean {
+  // Bun can reject import() with a ResolveMessage, which is not an Error: read defensively.
+  const e = (err ?? {}) as { code?: unknown; message?: unknown };
+  const code = e.code;
+  const message = typeof e.message === "string" ? e.message : String(err);
   const name = SUBSTRATE_DB_MODULE.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
   // The quoted specifier must be the thing that is missing: a missing transitive dependency
   // of an installed package also reads "Cannot find package 'x' from '.../substrate-db/...'".
-  const missing = new RegExp(`Cannot find (package|module) ['"]${name}['"]`).test(err.message);
+  const missing = new RegExp(`Cannot find (package|module) ['"]${name}['"]`).test(message);
   return missing && (code === undefined || code === "ERR_MODULE_NOT_FOUND" || code === "MODULE_NOT_FOUND");
 }
 
@@ -127,10 +138,12 @@ export function loadSubstrateDb(
 ): Promise<SubstrateDbModule> {
   substrateDbModule ??= (importer() as Promise<SubstrateDbModule>).catch((err) => {
     substrateDbModule = null;
-    // Only "the package itself is not there" gets the install hint; a package that is
-    // installed but throws while loading keeps its real error.
-    if (!isSubstrateModuleNotFound(err)) throw err;
+    // Only "the package itself is not there" gets the install hint; any other load failure
+    // is tagged separately (original kept as `cause`) so the log points at the package.
     const msg = err instanceof Error ? err.message : String(err);
+    if (!isSubstrateModuleNotFound(err)) {
+      throw new SubstrateModuleLoadError(`${SUBSTRATE_DB_MODULE} is installed but failed to load: ${msg}`, { cause: err });
+    }
     throw new SubstrateModuleMissingError(
       `Substrate is enabled but ${SUBSTRATE_DB_MODULE} could not be loaded (${msg}). ` +
         `Install it with \`bun add --no-save ../substrate-db\` (keeps bun.lock clean) or disable config.substrate.`
