@@ -49,6 +49,10 @@ import {
   resolveSubstrateConfig,
   jobRowToTaskInput,
   createSubstrateConnection,
+  loadSubstrateDb,
+  resetSubstrateDbCache,
+  normalizeEpoch,
+  SubstrateModuleMissingError,
   runSubstrateIntakeTick,
   runSubstrateWriteBack,
   runSubstrateLeaseRecovery,
@@ -258,6 +262,49 @@ describe("createSubstrateConnection", () => {
     await expect(createSubstrateConnection(sub)).rejects.toThrow(
       /substrate\.host is not set/
     );
+  });
+});
+
+describe("loadSubstrateDb", () => {
+  beforeEach(() => resetSubstrateDbCache());
+  afterEach(() => resetSubstrateDbCache());
+
+  test("a failed load is tagged module-missing, not cached, and a later call succeeds", async () => {
+    const fakeModule = { createSubstrateClient: () => ({}) } as unknown;
+    const importer = mock()
+      .mockRejectedValueOnce(new Error("Cannot find package"))
+      .mockResolvedValueOnce(fakeModule);
+
+    const first = loadSubstrateDb(importer);
+    await expect(first).rejects.toBeInstanceOf(SubstrateModuleMissingError);
+    await expect(first).rejects.toThrow(/bun add --no-save \.\.\/substrate-db/);
+
+    // Not cached: the second call imports again and succeeds.
+    await expect(loadSubstrateDb(importer)).resolves.toBe(fakeModule as never);
+    expect(importer).toHaveBeenCalledTimes(2);
+
+    // Success is cached: no third import.
+    await loadSubstrateDb(importer);
+    expect(importer).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("normalizeEpoch", () => {
+  test("accepts number, numeric string and bigint; rejects the rest", () => {
+    expect(normalizeEpoch(3)).toBe(3);
+    expect(normalizeEpoch("7")).toBe(7);
+    expect(normalizeEpoch(9n)).toBe(9);
+    expect(normalizeEpoch("abc")).toBeNull();
+    expect(normalizeEpoch("")).toBeNull();
+    expect(normalizeEpoch(NaN)).toBeNull();
+    expect(normalizeEpoch(undefined)).toBeNull();
+    expect(normalizeEpoch(null)).toBeNull();
+  });
+
+  test("jobRowToTaskInput keeps epoch fencing numeric when claim_epoch arrives as a string", () => {
+    const task = jobRowToTaskInput(makeJobRow({ id: "j-str", claim_epoch: "4" as unknown as number }));
+    expect(task.payload?._substrate_claim_epoch).toBe(4);
+    expect(task.payload?.idempotency_key).toBe("substrate-j-str-e4");
   });
 });
 

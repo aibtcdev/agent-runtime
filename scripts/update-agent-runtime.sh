@@ -135,6 +135,13 @@ else
 fi
 
 ~/.bun/bin/bun install
+# @genesis-works/substrate-db is an optionalDependency (file:../substrate-db) that a plain
+# `bun install` does not install, and installing it with `bun add` would rewrite package.json
+# and bun.lock (dirty tree, next `git pull --ff-only` refuses). On boxes with the sibling
+# checkout, add it with --no-save: node_modules only, tracked files stay untouched.
+if [[ -d ../substrate-db ]]; then
+  ~/.bun/bin/bun add --no-save ../substrate-db
+fi
 ~/.bun/bin/bunx tsc --noEmit
 ~/.bun/bin/bun test
 ~/.bun/bin/bun run src/cli.ts healthcheck --config "$config"
