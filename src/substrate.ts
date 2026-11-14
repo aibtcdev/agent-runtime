@@ -66,12 +66,26 @@ export type JobRow = {
   claim_epoch: number;
 };
 
-/** Coerces claim_epoch (number, numeric string or bigint) to a finite number, else null. */
+/**
+ * Coerces claim_epoch to a non-negative safe integer, else null. Accepts numbers, decimal
+ * digit strings (surrounding whitespace trimmed) and bigints in the safe range; refuses
+ * blank, hex, fractional, negative and non-numeric input.
+ */
 export function normalizeEpoch(value: unknown): number | null {
-  if (typeof value !== "number" && typeof value !== "string" && typeof value !== "bigint") return null;
-  if (value === "") return null;
-  const n = Number(value);
-  return Number.isFinite(n) ? n : null;
+  let n: number;
+  if (typeof value === "number") {
+    n = value;
+  } else if (typeof value === "string") {
+    const t = value.trim();
+    if (!/^\d+$/.test(t)) return null;
+    n = Number(t);
+  } else if (typeof value === "bigint") {
+    if (value < 0n || value > BigInt(Number.MAX_SAFE_INTEGER)) return null;
+    n = Number(value);
+  } else {
+    return null;
+  }
+  return Number.isSafeInteger(n) && n >= 0 ? n : null;
 }
 
 /** Opaque client handle from createSubstrateClient. */
@@ -95,6 +109,16 @@ export class SubstrateModuleMissingError extends Error {
   }
 }
 
+function isSubstrateModuleNotFound(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const code = (err as { code?: unknown }).code;
+  const name = SUBSTRATE_DB_MODULE.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
+  // The quoted specifier must be the thing that is missing: a missing transitive dependency
+  // of an installed package also reads "Cannot find package 'x' from '.../substrate-db/...'".
+  const missing = new RegExp(`Cannot find (package|module) ['"]${name}['"]`).test(err.message);
+  return missing && (code === undefined || code === "ERR_MODULE_NOT_FOUND" || code === "MODULE_NOT_FOUND");
+}
+
 let substrateDbModule: Promise<SubstrateDbModule> | null = null;
 
 /** Loads @genesis-works/substrate-db once. A failed load is not cached, so a later tick retries. */
@@ -103,6 +127,9 @@ export function loadSubstrateDb(
 ): Promise<SubstrateDbModule> {
   substrateDbModule ??= (importer() as Promise<SubstrateDbModule>).catch((err) => {
     substrateDbModule = null;
+    // Only "the package itself is not there" gets the install hint; a package that is
+    // installed but throws while loading keeps its real error.
+    if (!isSubstrateModuleNotFound(err)) throw err;
     const msg = err instanceof Error ? err.message : String(err);
     throw new SubstrateModuleMissingError(
       `Substrate is enabled but ${SUBSTRATE_DB_MODULE} could not be loaded (${msg}). ` +
@@ -196,7 +223,13 @@ export function jobRowToTaskInput(job: JobRow): TaskInput {
   // lease-expiry-mid-flight scenarios to a no-op on the second handler call.
   // claim_epoch may arrive as string/bigint from postgres; normalise so the fencing in
   // runSubstrateWriteBack (which needs a number) is not silently turned off.
-  const claimEpoch = normalizeEpoch(job.claim_epoch) ?? job.claim_epoch;
+  const claimEpoch = normalizeEpoch(job.claim_epoch);
+  if (claimEpoch === null) {
+    // Throwing sends the job down the job-parse-fail path (lease recovered), instead of
+    // queueing it with a shared "…-enull" idempotency key that would make a re-claim at a
+    // real epoch look like a duplicate.
+    throw new Error(`invalid claim_epoch ${JSON.stringify(String(job.claim_epoch))} for job ${job.id}`);
+  }
   const idempotencyKey = `substrate-${job.id}-e${claimEpoch}`;
   return {
     kind: job.kind,
@@ -292,7 +325,7 @@ export async function runSubstrateIntakeTick(
     claimed: true,
     jobId: job.id,
     taskId: task.task_id,
-    epochUsed: normalizeEpoch(job.claim_epoch) ?? job.claim_epoch,
+    epochUsed: taskInput.payload._substrate_claim_epoch as number,
   };
 }
 
@@ -317,10 +350,16 @@ export async function runSubstrateWriteBack(
 
   const payload = task.payload;
   const jobId = typeof payload._substrate_job_id === "string" ? payload._substrate_job_id : null;
-  const claimEpoch = normalizeEpoch(payload._substrate_claim_epoch) ?? undefined;
+  const claimEpoch = normalizeEpoch(payload._substrate_claim_epoch);
 
   if (!jobId) {
     console.error(`[substrate] write-back skip: missing _substrate_job_id in task ${task.task_id}`);
+    return;
+  }
+  if (claimEpoch === null) {
+    // Never write unfenced: a stale executor could overwrite a newer claim's result.
+    // The job stays under lease and releaseExpiredLeases reconciles it.
+    console.error(`[substrate] write-back skip: missing or malformed _substrate_claim_epoch in task ${task.task_id} jobs.id=${jobId}`);
     return;
   }
 
@@ -347,21 +386,21 @@ export async function runSubstrateWriteBack(
         claimEpoch
       );
       if (result.ok) {
-        console.info(`[substrate] complete jobs.id=${jobId} epoch=${claimEpoch ?? "none"}`);
+        console.info(`[substrate] complete jobs.id=${jobId} epoch=${claimEpoch}`);
       } else {
         // Self-contained fallback log: don't assume the substrate-db package's
         // log format stays stable across versions. Mismatch / already-done
         // both land here; the package may also log its own line.
-        console.warn(`[substrate] complete-failed jobs.id=${jobId} epoch=${claimEpoch ?? "none"}`);
+        console.warn(`[substrate] complete-failed jobs.id=${jobId} epoch=${claimEpoch}`);
       }
     } else {
       const reason = outcome.operator_summary.slice(0, 500);
       const { failJob } = await loadSubstrateDb();
       const result = await failJob(substrateDb, jobId, reason, claimEpoch);
       if (result.ok) {
-        console.info(`[substrate] fail jobs.id=${jobId} epoch=${claimEpoch ?? "none"} reason=${reason.slice(0, 100)}`);
+        console.info(`[substrate] fail jobs.id=${jobId} epoch=${claimEpoch} reason=${reason.slice(0, 100)}`);
       } else {
-        console.warn(`[substrate] fail-failed jobs.id=${jobId} epoch=${claimEpoch ?? "none"}`);
+        console.warn(`[substrate] fail-failed jobs.id=${jobId} epoch=${claimEpoch}`);
       }
     }
   } catch (error) {

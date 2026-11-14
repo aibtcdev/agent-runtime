@@ -272,7 +272,7 @@ describe("loadSubstrateDb", () => {
   test("a failed load is tagged module-missing, not cached, and a later call succeeds", async () => {
     const fakeModule = { createSubstrateClient: () => ({}) } as unknown;
     const importer = mock()
-      .mockRejectedValueOnce(new Error("Cannot find package"))
+      .mockRejectedValueOnce(new Error("Cannot find package '@genesis-works/substrate-db' from '/x/src/substrate.ts'"))
       .mockResolvedValueOnce(fakeModule);
 
     const first = loadSubstrateDb(importer);
@@ -287,6 +287,25 @@ describe("loadSubstrateDb", () => {
     await loadSubstrateDb(importer);
     expect(importer).toHaveBeenCalledTimes(2);
   });
+
+  test("ERR_MODULE_NOT_FOUND for the package itself is tagged module-missing", async () => {
+    const err = Object.assign(new Error("Cannot find module '@genesis-works/substrate-db'"), {
+      code: "ERR_MODULE_NOT_FOUND",
+    });
+    await expect(loadSubstrateDb(async () => { throw err; })).rejects.toBeInstanceOf(SubstrateModuleMissingError);
+  });
+
+  test("other load errors are rethrown as-is, not labelled module-missing", async () => {
+    const broken = new Error("SUBSTRATE_PG_URL is not set");
+    const failed = loadSubstrateDb(async () => { throw broken; });
+    await expect(failed).rejects.toBe(broken);
+    await expect(failed).rejects.not.toBeInstanceOf(SubstrateModuleMissingError);
+
+    // A missing transitive dependency of an installed package is not "substrate-db missing".
+    resetSubstrateDbCache();
+    const transitive = new Error("Cannot find package 'pg-native' from '/x/node_modules/@genesis-works/substrate-db/dist/index.js'");
+    await expect(loadSubstrateDb(async () => { throw transitive; })).rejects.toBe(transitive);
+  });
 });
 
 describe("normalizeEpoch", () => {
@@ -299,6 +318,34 @@ describe("normalizeEpoch", () => {
     expect(normalizeEpoch(NaN)).toBeNull();
     expect(normalizeEpoch(undefined)).toBeNull();
     expect(normalizeEpoch(null)).toBeNull();
+  });
+
+  test("rejects whitespace, hex, fractions, negatives and unsafe values", () => {
+    for (const bad of ["  ", "0x10", "1.5", "1e3", "-1", "+1", "1 2", 1.5, -1, Infinity, 2 ** 53, {}, [], true]) {
+      expect(normalizeEpoch(bad)).toBeNull();
+    }
+    expect(normalizeEpoch(-1n)).toBeNull();
+    expect(normalizeEpoch(BigInt(Number.MAX_SAFE_INTEGER) + 1n)).toBeNull();
+  });
+
+  test("accepts zero, trimmed digit strings and the largest safe integer", () => {
+    expect(normalizeEpoch(0)).toBe(0);
+    expect(normalizeEpoch(" 12 ")).toBe(12);
+    expect(normalizeEpoch(Number.MAX_SAFE_INTEGER)).toBe(Number.MAX_SAFE_INTEGER);
+    expect(normalizeEpoch(BigInt(Number.MAX_SAFE_INTEGER))).toBe(Number.MAX_SAFE_INTEGER);
+  });
+
+  test("jobRowToTaskInput throws on a bad claim_epoch instead of queueing it", () => {
+    for (const bad of [null, "abc", {}, undefined, "1.5"]) {
+      expect(() => jobRowToTaskInput(makeJobRow({ claim_epoch: bad }))).toThrow(/invalid claim_epoch/);
+    }
+  });
+
+  test("a job with a bad claim_epoch takes the job-parse-fail path and is not enqueued", async () => {
+    mockClaimNextJob.mockResolvedValueOnce(makeJobRow({ id: "j-bad-epoch", claim_epoch: null }));
+    const result = await runSubstrateIntakeTick(fakeDb, makeSubConfig(), localDb, makeRuntimeConfig(makeSubConfig()));
+    expect(result).toEqual({ claimed: false, reason: "job-parse-fail" });
+    expect(localDb.query("SELECT COUNT(*) AS n FROM tasks").get()).toEqual({ n: 0 });
   });
 
   test("jobRowToTaskInput keeps epoch fencing numeric when claim_epoch arrives as a string", () => {
@@ -420,6 +467,19 @@ describe("runSubstrateWriteBack", () => {
       machine_status: "ok" as const,
     });
     expect(mockCompleteJob).not.toHaveBeenCalled();
+  });
+
+  test("skips write-back (no unfenced write) when the claim epoch is null or malformed", async () => {
+    for (const bad of [null, "abc", {}, undefined, "1.5"]) {
+      const task = makeTaskRecord({
+        payload: { _substrate_job_id: "job-abc-123", _substrate_claim_epoch: bad },
+      });
+      await runSubstrateWriteBack(fakeDb, task, { status: "completed", operator_summary: "done", machine_status: "ok" as const });
+      await runSubstrateWriteBack(fakeDb, task, { status: "permanent_failure", operator_summary: "boom", machine_status: "error" as never });
+    }
+    expect(mockCompleteJob).not.toHaveBeenCalled();
+    expect(mockFailJob).not.toHaveBeenCalled();
+    expect(consoleError).toHaveBeenCalledWith(expect.stringContaining("write-back skip: missing or malformed _substrate_claim_epoch"));
   });
 
   test("complete happy path: calls completeJob with claim_epoch, logs success", async () => {

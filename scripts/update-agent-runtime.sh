@@ -139,8 +139,11 @@ fi
 # `bun install` does not install, and installing it with `bun add` would rewrite package.json
 # and bun.lock (dirty tree, next `git pull --ff-only` refuses). On boxes with the sibling
 # checkout, add it with --no-save: node_modules only, tracked files stay untouched.
+# Non-fatal: services are already stopped here, and a broken sibling checkout must not leave
+# the agent down (a substrate-enabled agent reports module-missing in its own log instead).
 if [[ -d ../substrate-db ]]; then
-  ~/.bun/bin/bun add --no-save ../substrate-db
+  ~/.bun/bin/bun add --no-save ../substrate-db \
+    || echo "WARN: could not install ../substrate-db; continuing without it" >&2
 fi
 ~/.bun/bin/bunx tsc --noEmit
 ~/.bun/bin/bun test
