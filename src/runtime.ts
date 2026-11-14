@@ -29,6 +29,8 @@ import {
   runSubstrateIntakeTick,
   runSubstrateWriteBack,
   runSubstrateLeaseRecovery,
+  SubstrateModuleMissingError,
+  SubstrateModuleLoadError,
   type SubstrateDb,
 } from "./substrate";
 
@@ -219,7 +221,11 @@ export async function runOnce(db: Database, config: RuntimeConfig): Promise<Reco
           substrateDbInitialized = true; // only mark initialized on success
         } catch (error) {
           const msg = error instanceof Error ? error.message : String(error);
-          console.error(`[substrate] skip reason=credential-fail error=${msg}`);
+          const reason =
+            error instanceof SubstrateModuleMissingError ? "module-missing"
+            : error instanceof SubstrateModuleLoadError ? "module-load-error"
+            : "credential-fail";
+          console.error(`[substrate] skip reason=${reason} error=${msg}`);
           substrateDb = null;
           // substrateDbInitialized stays false — next tick retries.
         }

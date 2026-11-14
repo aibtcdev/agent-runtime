@@ -135,6 +135,26 @@ else
 fi
 
 ~/.bun/bin/bun install
+# @genesis-works/substrate-db is an optionalDependency (file:../substrate-db) that a plain
+# `bun install` does not install, and installing it with `bun add` would rewrite package.json
+# and bun.lock (dirty tree, next `git pull --ff-only` refuses). On boxes with the sibling
+# checkout, add it with --no-save: node_modules only, tracked files stay untouched.
+# Fatal only when this agent's config enables substrate (read with the runtime's own config
+# loader); otherwise a broken sibling checkout only warns, so the agent still restarts.
+if [[ -d ../substrate-db ]]; then
+  substrate_enabled="$(~/.bun/bin/bun -e '
+    import { loadConfig } from "./src/config";
+    const { config } = await loadConfig(process.argv[1]);
+    console.log(config.substrate?.enabled === true ? "1" : "0");
+  ' "$config" 2>/dev/null || true)"
+  if ! ~/.bun/bin/bun add --no-save ../substrate-db; then
+    if [[ "$substrate_enabled" == "1" ]]; then
+      echo "ERROR: substrate is enabled in $config but ../substrate-db could not be installed" >&2
+      exit 1
+    fi
+    echo "WARN: could not install ../substrate-db; substrate is not enabled, continuing" >&2
+  fi
+fi
 ~/.bun/bin/bunx tsc --noEmit
 ~/.bun/bin/bun test
 ~/.bun/bin/bun run src/cli.ts healthcheck --config "$config"

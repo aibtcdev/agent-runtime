@@ -9,6 +9,8 @@
 //   [substrate] complete jobs.id=<id> epoch=<n>
 //   [substrate] fail jobs.id=<id> epoch=<n> reason=<...>
 //   [substrate] lease-recovery released=<n>
+//   [substrate] skip reason=module-missing error=<...>       (@genesis-works/substrate-db not installed)
+//   [substrate] skip reason=module-load-error error=<...>    (package installed but throws while loading)
 //   [substrate] skip reason=credential-fail error=<...>
 //   [substrate] skip reason=db-unreachable error=<...>
 //   [substrate] skip reason=job-parse-fail error=<...> jobs.id=<id>
@@ -20,6 +22,8 @@
 //
 // Failure conditions:
 //   - Substrate unreachable → tick logs [substrate] skip and continues (NOT crash)
+//   - Package missing → tick logs [substrate] skip reason=module-missing; checked before the
+//     credential store is touched, so an absent package never decrypts the secret.
 //   - Credential resolution fail → tick logs [substrate] skip with distinct line; flag NOT
 //     marked initialized so the next tick retries.
 //   - claimNextJob returns null → no-op tick (silent — quiet-tick visibility goes through
@@ -38,14 +42,6 @@
 // ---------------------------------------------------------------------------
 
 import type { Database } from "bun:sqlite";
-import {
-  createSubstrateClient,
-  claimNextJob,
-  completeJob,
-  failJob,
-  releaseExpiredLeases,
-  type JobRow,
-} from "@genesis-works/substrate-db";
 import type { RuntimeConfig, SubstrateConfig, TaskInput, CanonicalOutcome, TaskRecord } from "./types";
 import { resolveCredentialRefs } from "./credentials";
 import { enqueueTask } from "./db";
@@ -58,7 +54,108 @@ export type SubstrateTickResult =
   | { claimed: false; reason?: string }
   | { claimed: true; jobId: string; taskId: string; epochUsed: number };
 
-export type SubstrateDb = ReturnType<typeof createSubstrateClient>;
+// @genesis-works/substrate-db is an optional dependency (#7): it is loaded on first use, so an
+// agent without a substrate config installs and runs without it. The specifier is a variable so
+// typecheck doesn't need the package either; the shapes below are the slice of its API used here.
+const SUBSTRATE_DB_MODULE = "@genesis-works/substrate-db";
+
+export type JobRow = {
+  id: string;
+  kind: string;
+  payload: unknown;
+  /** Typed number, but postgres may hand back a string/bigint; see normalizeEpoch. */
+  claim_epoch: number;
+};
+
+/**
+ * Coerces claim_epoch to a non-negative safe integer, else null. Accepts numbers, decimal
+ * digit strings (surrounding whitespace trimmed) and bigints in the safe range; refuses
+ * blank, hex, fractional, negative and non-numeric input.
+ */
+export function normalizeEpoch(value: unknown): number | null {
+  let n: number;
+  if (typeof value === "number") {
+    n = value;
+  } else if (typeof value === "string") {
+    const t = value.trim();
+    if (!/^\d+$/.test(t)) return null;
+    n = Number(t);
+  } else if (typeof value === "bigint") {
+    if (value < 0n || value > BigInt(Number.MAX_SAFE_INTEGER)) return null;
+    n = Number(value);
+  } else {
+    return null;
+  }
+  return Number.isSafeInteger(n) && n >= 0 ? n : null;
+}
+
+/** Opaque client handle from createSubstrateClient. */
+export type SubstrateDb = { readonly __substrateDb?: never } & object;
+
+type WriteResult = { ok: boolean };
+
+type SubstrateDbModule = {
+  createSubstrateClient(opts: { host: string; port: number; database: string; user: string; password: string }): SubstrateDb;
+  claimNextJob(db: SubstrateDb, slotId: string, kinds: string[], leaseSecs: number): Promise<JobRow | null>;
+  completeJob(db: SubstrateDb, jobId: string, result: Record<string, unknown>, extra: undefined, claimEpoch?: number): Promise<WriteResult>;
+  failJob(db: SubstrateDb, jobId: string, reason: string, claimEpoch?: number): Promise<WriteResult>;
+  releaseExpiredLeases(db: SubstrateDb): Promise<number>;
+};
+
+/** Thrown when @genesis-works/substrate-db cannot be loaded (logged as reason=module-missing). */
+export class SubstrateModuleMissingError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "SubstrateModuleMissingError";
+  }
+}
+
+/** Thrown when @genesis-works/substrate-db is installed but fails while loading (reason=module-load-error). */
+export class SubstrateModuleLoadError extends Error {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = "SubstrateModuleLoadError";
+  }
+}
+
+export function isSubstrateModuleNotFound(err: unknown): boolean {
+  // Bun can reject import() with a ResolveMessage, which is not an Error: read defensively.
+  const e = (err ?? {}) as { code?: unknown; message?: unknown };
+  const code = e.code;
+  const message = typeof e.message === "string" ? e.message : String(err);
+  const name = SUBSTRATE_DB_MODULE.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
+  // The quoted specifier must be the thing that is missing: a missing transitive dependency
+  // of an installed package also reads "Cannot find package 'x' from '.../substrate-db/...'".
+  const missing = new RegExp(`Cannot find (package|module) ['"]${name}['"]`).test(message);
+  return missing && (code === undefined || code === "ERR_MODULE_NOT_FOUND" || code === "MODULE_NOT_FOUND");
+}
+
+let substrateDbModule: Promise<SubstrateDbModule> | null = null;
+
+/** Loads @genesis-works/substrate-db once. A failed load is not cached, so a later tick retries. */
+export function loadSubstrateDb(
+  importer: () => Promise<unknown> = () => import(SUBSTRATE_DB_MODULE) // injectable for tests
+): Promise<SubstrateDbModule> {
+  substrateDbModule ??= (importer() as Promise<SubstrateDbModule>).catch((err) => {
+    substrateDbModule = null;
+    // Only "the package itself is not there" gets the install hint; any other load failure
+    // is tagged separately (original kept as `cause`) so the log points at the package.
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!isSubstrateModuleNotFound(err)) {
+      throw new SubstrateModuleLoadError(`${SUBSTRATE_DB_MODULE} is installed but failed to load: ${msg}`, { cause: err });
+    }
+    throw new SubstrateModuleMissingError(
+      `Substrate is enabled but ${SUBSTRATE_DB_MODULE} could not be loaded (${msg}). ` +
+        `Install it with \`bun add --no-save ../substrate-db\` (keeps bun.lock clean) or disable config.substrate.`
+    );
+  });
+  return substrateDbModule;
+}
+
+/** Test hook: forget the cached module promise. */
+export function resetSubstrateDbCache(): void {
+  substrateDbModule = null;
+}
 
 // ---------------------------------------------------------------------------
 // resolveSubstrateConfig
@@ -84,8 +181,9 @@ export function resolveSubstrateConfig(config: RuntimeConfig): SubstrateConfig |
 
 // ---------------------------------------------------------------------------
 // createSubstrateConnection
-// Resolves the substrate DB password from the credential store and creates
-// a Drizzle client. Throws on credential resolution failure.
+// Loads the substrate package, resolves the substrate DB password from the credential
+// store and creates a Drizzle client. Throws SubstrateModuleMissingError if the package
+// is absent, and a plain Error on credential resolution failure.
 // ---------------------------------------------------------------------------
 
 export async function createSubstrateConnection(
@@ -99,6 +197,9 @@ export async function createSubstrateConnection(
       'Substrate enabled but substrate.host is not set — explicit host required (no implicit default).'
     );
   }
+
+  // Load the package first: if it is absent, fail fast without touching the credential store.
+  const { createSubstrateClient } = await loadSubstrateDb();
 
   // Resolve the credential — the env key SUBSTRATE_DB_CREDENTIAL holds the id.
   // We use resolveCredentialRefs on a fake env object to reuse the existing pattern.
@@ -133,7 +234,16 @@ export function jobRowToTaskInput(job: JobRow): TaskInput {
   // perform external side-effects (email send, PR open, tx broadcast) check this
   // key in their own dedup store before acting — bounds duplicate execution from
   // lease-expiry-mid-flight scenarios to a no-op on the second handler call.
-  const idempotencyKey = `substrate-${job.id}-e${job.claim_epoch}`;
+  // claim_epoch may arrive as string/bigint from postgres; normalise so the fencing in
+  // runSubstrateWriteBack (which needs a number) is not silently turned off.
+  const claimEpoch = normalizeEpoch(job.claim_epoch);
+  if (claimEpoch === null) {
+    // Throwing sends the job down the job-parse-fail path (lease recovered), instead of
+    // queueing it with a shared "…-enull" idempotency key that would make a re-claim at a
+    // real epoch look like a duplicate.
+    throw new Error(`invalid claim_epoch ${JSON.stringify(String(job.claim_epoch))} for job ${job.id}`);
+  }
+  const idempotencyKey = `substrate-${job.id}-e${claimEpoch}`;
   return {
     kind: job.kind,
     source: `substrate:${job.id}`,        // ties runtime task back to the substrate job
@@ -142,7 +252,7 @@ export function jobRowToTaskInput(job: JobRow): TaskInput {
     payload: {
       ...p,
       _substrate_job_id: job.id,           // load-bearing: write-back uses this
-      _substrate_claim_epoch: job.claim_epoch, // load-bearing: epoch fencing
+      _substrate_claim_epoch: claimEpoch, // load-bearing: epoch fencing
       idempotency_key: idempotencyKey,     // dedup key for side-effecting handlers
     },
     requested_profile: typeof p.requested_profile === "string" ? p.requested_profile : undefined,
@@ -184,6 +294,7 @@ export async function runSubstrateIntakeTick(
   let job: JobRow | null = null;
 
   try {
+    const { claimNextJob } = await loadSubstrateDb();
     job = await claimNextJob(substrateDb, sub.slotId, sub.kinds, leaseSecs);
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
@@ -227,7 +338,7 @@ export async function runSubstrateIntakeTick(
     claimed: true,
     jobId: job.id,
     taskId: task.task_id,
-    epochUsed: job.claim_epoch,
+    epochUsed: taskInput.payload._substrate_claim_epoch as number,
   };
 }
 
@@ -252,12 +363,16 @@ export async function runSubstrateWriteBack(
 
   const payload = task.payload;
   const jobId = typeof payload._substrate_job_id === "string" ? payload._substrate_job_id : null;
-  const claimEpoch = typeof payload._substrate_claim_epoch === "number"
-    ? payload._substrate_claim_epoch
-    : undefined;
+  const claimEpoch = normalizeEpoch(payload._substrate_claim_epoch);
 
   if (!jobId) {
     console.error(`[substrate] write-back skip: missing _substrate_job_id in task ${task.task_id}`);
+    return;
+  }
+  if (claimEpoch === null) {
+    // Never write unfenced: a stale executor could overwrite a newer claim's result.
+    // The job stays under lease and releaseExpiredLeases reconciles it.
+    console.error(`[substrate] write-back skip: missing or malformed _substrate_claim_epoch in task ${task.task_id} jobs.id=${jobId}`);
     return;
   }
 
@@ -269,6 +384,7 @@ export async function runSubstrateWriteBack(
   // releaseExpiredLeases reconciles on the next cycle.
   try {
     if (isSuccess) {
+      const { completeJob } = await loadSubstrateDb();
       const result = await completeJob(
         substrateDb,
         jobId,
@@ -283,20 +399,21 @@ export async function runSubstrateWriteBack(
         claimEpoch
       );
       if (result.ok) {
-        console.info(`[substrate] complete jobs.id=${jobId} epoch=${claimEpoch ?? "none"}`);
+        console.info(`[substrate] complete jobs.id=${jobId} epoch=${claimEpoch}`);
       } else {
         // Self-contained fallback log: don't assume the substrate-db package's
         // log format stays stable across versions. Mismatch / already-done
         // both land here; the package may also log its own line.
-        console.warn(`[substrate] complete-failed jobs.id=${jobId} epoch=${claimEpoch ?? "none"}`);
+        console.warn(`[substrate] complete-failed jobs.id=${jobId} epoch=${claimEpoch}`);
       }
     } else {
       const reason = outcome.operator_summary.slice(0, 500);
+      const { failJob } = await loadSubstrateDb();
       const result = await failJob(substrateDb, jobId, reason, claimEpoch);
       if (result.ok) {
-        console.info(`[substrate] fail jobs.id=${jobId} epoch=${claimEpoch ?? "none"} reason=${reason.slice(0, 100)}`);
+        console.info(`[substrate] fail jobs.id=${jobId} epoch=${claimEpoch} reason=${reason.slice(0, 100)}`);
       } else {
-        console.warn(`[substrate] fail-failed jobs.id=${jobId} epoch=${claimEpoch ?? "none"}`);
+        console.warn(`[substrate] fail-failed jobs.id=${jobId} epoch=${claimEpoch}`);
       }
     }
   } catch (error) {
@@ -313,6 +430,7 @@ export async function runSubstrateWriteBack(
 
 export async function runSubstrateLeaseRecovery(substrateDb: SubstrateDb): Promise<void> {
   try {
+    const { releaseExpiredLeases } = await loadSubstrateDb();
     const released = await releaseExpiredLeases(substrateDb);
     if (released > 0) {
       console.info(`[substrate] lease-recovery released=${released}`);
